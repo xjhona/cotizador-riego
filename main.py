@@ -18,7 +18,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="main-header">🌱 Cotizador de Proyectos de Riego</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Vibecoded by JhonatanChilet (2026)</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Vibecoded by JhonatanChilet</div>', unsafe_allow_html=True)
 st.markdown("---")
 
 def limpiar_texto(texto):
@@ -187,15 +187,16 @@ if project_file and db_file:
         # --- LÓGICA DE ACTUALIZACIÓN ---
         if not edited_df.equals(df_view):
             
-            # 1. FILTRAR FILAS ELIMINADAS (Si el usuario marcó la casilla, la eliminamos del dataframe)
-            edited_df = edited_df[edited_df['❌ Eliminar'] == False]
-            edited_df = edited_df.drop(columns=['❌ Eliminar']) # Quitamos la columna auxiliar
+            # 1. FILTRAR FILAS ELIMINADAS (Si el usuario marcó la casilla)
+            filas_a_borrar = edited_df[edited_df['❌ Eliminar'] == True].index
+            edited_df = edited_df.drop(index=filas_a_borrar, errors='ignore')
+            edited_df = edited_df.drop(columns=['❌ Eliminar'], errors='ignore') 
             
             # 2. Rellenar Textos Vacíos
-            edited_df['Partida'] = edited_df['Partida'].apply(lambda x: "NUEVO SISTEMA" if pd.isna(x) or x is None else str(x))
-            edited_df['Descripcion'] = edited_df['Descripcion'].apply(lambda x: "" if pd.isna(x) or x is None else str(x))
-            edited_df['Codigo'] = edited_df['Codigo'].apply(lambda x: "S.C" if pd.isna(x) or x is None else str(x))
-            edited_df['Unidades'] = edited_df['Unidades'].apply(lambda x: "Und." if pd.isna(x) or x is None else str(x))
+            edited_df['Partida'] = edited_df['Partida'].fillna("NUEVO SISTEMA")
+            edited_df['Descripcion'] = edited_df['Descripcion'].fillna("")
+            edited_df['Codigo'] = edited_df['Codigo'].fillna("S.C")
+            edited_df['Unidades'] = edited_df['Unidades'].fillna("Und.")
 
             # 3. Llenar Números y Recalcular
             edited_df['Cantidad'] = pd.to_numeric(edited_df['Cantidad'], errors='coerce').fillna(0)
@@ -213,11 +214,25 @@ if project_file and db_file:
                     n_missing = mask_nan.sum()
                     edited_df.loc[mask_nan, 'Item'] = range(int(max_item) + 1, int(max_item) + 1 + n_missing)
 
-            # Reconstruir la tabla maestra
-            df_master_remaining = st.session_state.df_master.drop(index=df_view.index, errors='ignore')
-            st.session_state.df_master = pd.concat([df_master_remaining, edited_df])
-            st.session_state.df_master = st.session_state.df_master.sort_values(by='Item').reset_index(drop=True)
-            st.rerun()
+            # 5. ACTUALIZAR MASTER SIN DESTRUIR EL ÍNDICE
+            # Extraemos filas eliminadas nativamente por el data_editor
+            eliminadas_nativas = df_view.index[~df_view.index.isin(edited_df.index)]
+            indices_a_eliminar = filas_a_borrar.union(eliminadas_nativas)
+            
+            if not indices_a_eliminar.empty:
+                st.session_state.df_master = st.session_state.df_master.drop(index=indices_a_eliminar, errors='ignore')
+
+            # Actualizamos las filas existentes conservando su índice intacto
+            filas_existentes = edited_df[edited_df.index.isin(st.session_state.df_master.index)]
+            st.session_state.df_master.update(filas_existentes)
+            
+            # Añadimos las filas nuevas al final
+            filas_nuevas = edited_df[~edited_df.index.isin(st.session_state.df_master.index)]
+            if not filas_nuevas.empty:
+                st.session_state.df_master = pd.concat([st.session_state.df_master, filas_nuevas])
+
+            # ¡OJO! Hemos eliminado intencionalmente st.session_state.df_master.sort_values...reset_index()
+            # ¡OJO! Hemos eliminado intencionalmente st.rerun()
 
         # --- CÁLCULOS FINALES ---
         total_neto = st.session_state.df_master['Total'].sum()
