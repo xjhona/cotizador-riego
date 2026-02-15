@@ -18,7 +18,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="main-header">🌱 Cotizador de Proyectos de Riego</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Vibecoded by JhonatanChilet</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Vibe coded by JhonatanChilet</div>', unsafe_allow_html=True)
 st.markdown("---")
 
 def limpiar_texto(texto):
@@ -158,9 +158,8 @@ if project_file and db_file:
         elif orden == "Partida (Agrupado)": df_view = df_view.sort_values(by=['Partida', 'Descripcion'])
         else: df_view = df_view.sort_values(by='Item', ascending=True)
 
-        st.info("💡 **Para añadir:** Haz clic en 'Add row'. **Para eliminar:** Marca la casilla '❌ Eliminar' de la fila que ya no desees.")
+        st.info("💡 **Para añadir:** Haz clic en 'Add row'. Puedes llenar todos los datos sin que el cursor salte. El Dashboard se actualizará en vivo.")
         
-        # NUEVO: Insertamos la columna visual para eliminar filas fácilmente
         df_view.insert(0, '❌ Eliminar', False)
 
         # --- TABLA EDITABLE ---
@@ -184,26 +183,30 @@ if project_file and db_file:
             height=500
         )
 
-        # --- LÓGICA DE ACTUALIZACIÓN ---
+        # --- LÓGICA DE ACTUALIZACIÓN (SIN PERDER EL FOCO) ---
         if not edited_df.equals(df_view):
             
-            # 1. FILTRAR FILAS ELIMINADAS (Si el usuario marcó la casilla)
-            filas_a_borrar = edited_df[edited_df['❌ Eliminar'] == True].index
-            edited_df = edited_df.drop(index=filas_a_borrar, errors='ignore')
-            edited_df = edited_df.drop(columns=['❌ Eliminar'], errors='ignore') 
+            # Detectamos si se marcó la casilla de borrar
+            necesita_recargar = False
+            if edited_df['❌ Eliminar'].any():
+                necesita_recargar = True
             
-            # 2. Rellenar Textos Vacíos
-            edited_df['Partida'] = edited_df['Partida'].fillna("NUEVO SISTEMA")
-            edited_df['Descripcion'] = edited_df['Descripcion'].fillna("")
-            edited_df['Codigo'] = edited_df['Codigo'].fillna("S.C")
-            edited_df['Unidades'] = edited_df['Unidades'].fillna("Und.")
+            # 1. Quitar de la vista las filas marcadas para eliminar
+            edited_df = edited_df[edited_df['❌ Eliminar'] == False]
+            edited_df = edited_df.drop(columns=['❌ Eliminar']) 
+            
+            # 2. Rellenar Textos
+            edited_df['Partida'] = edited_df['Partida'].apply(lambda x: "NUEVO SISTEMA" if pd.isna(x) or x is None else str(x))
+            edited_df['Descripcion'] = edited_df['Descripcion'].apply(lambda x: "" if pd.isna(x) or x is None else str(x))
+            edited_df['Codigo'] = edited_df['Codigo'].apply(lambda x: "S.C" if pd.isna(x) or x is None else str(x))
+            edited_df['Unidades'] = edited_df['Unidades'].apply(lambda x: "Und." if pd.isna(x) or x is None else str(x))
 
-            # 3. Llenar Números y Recalcular
+            # 3. Calcular Totales
             edited_df['Cantidad'] = pd.to_numeric(edited_df['Cantidad'], errors='coerce').fillna(0)
             edited_df['Precio'] = pd.to_numeric(edited_df['Precio'], errors='coerce').fillna(0)
             edited_df['Total'] = edited_df['Cantidad'] * edited_df['Precio']
             
-            # 4. Asignar N° de Item si está vacío
+            # 4. Asignar N° de Item a las filas nuevas
             if 'Item' in edited_df.columns:
                 edited_df['Item'] = pd.to_numeric(edited_df['Item'], errors='coerce')
                 max_item = st.session_state.df_master['Item'].max()
@@ -214,25 +217,24 @@ if project_file and db_file:
                     n_missing = mask_nan.sum()
                     edited_df.loc[mask_nan, 'Item'] = range(int(max_item) + 1, int(max_item) + 1 + n_missing)
 
-            # 5. ACTUALIZAR MASTER SIN DESTRUIR EL ÍNDICE
-            # Extraemos filas eliminadas nativamente por el data_editor
-            eliminadas_nativas = df_view.index[~df_view.index.isin(edited_df.index)]
-            indices_a_eliminar = filas_a_borrar.union(eliminadas_nativas)
+            # Actualizamos las filas existentes de manera silenciosa
+            st.session_state.df_master.update(edited_df)
             
-            if not indices_a_eliminar.empty:
-                st.session_state.df_master = st.session_state.df_master.drop(index=indices_a_eliminar, errors='ignore')
+            # Anexamos las filas recién creadas
+            nuevas_filas = edited_df[~edited_df.index.isin(st.session_state.df_master.index)]
+            if not nuevas_filas.empty:
+                st.session_state.df_master = pd.concat([st.session_state.df_master, nuevas_filas])
+                
+            # Eliminamos definitivamente las que se marcaron con ❌
+            filas_borradas = df_view[~df_view.index.isin(edited_df.index)]
+            if not filas_borradas.empty:
+                st.session_state.df_master = st.session_state.df_master.drop(index=filas_borradas.index, errors='ignore')
 
-            # Actualizamos las filas existentes conservando su índice intacto
-            filas_existentes = edited_df[edited_df.index.isin(st.session_state.df_master.index)]
-            st.session_state.df_master.update(filas_existentes)
-            
-            # Añadimos las filas nuevas al final
-            filas_nuevas = edited_df[~edited_df.index.isin(st.session_state.df_master.index)]
-            if not filas_nuevas.empty:
-                st.session_state.df_master = pd.concat([st.session_state.df_master, filas_nuevas])
-
-            # ¡OJO! Hemos eliminado intencionalmente st.session_state.df_master.sort_values...reset_index()
-            # ¡OJO! Hemos eliminado intencionalmente st.rerun()
+            # SOLO recargamos agresivamente la app si alguien borró una fila.
+            # Para la edición de textos/números, el cursor se mantendrá perfecto.
+            if necesita_recargar:
+                st.session_state.df_master = st.session_state.df_master.sort_values(by='Item').reset_index(drop=True)
+                st.rerun()
 
         # --- CÁLCULOS FINALES ---
         total_neto = st.session_state.df_master['Total'].sum()
@@ -262,17 +264,15 @@ if project_file and db_file:
                 pdf = PresupuestoPDF()
                 pdf.add_page()
                 
-                # --- NUEVO DISEÑO: RECUADRO VERDE A LA MITAD ---
                 pdf.set_draw_color(46, 125, 50)
                 pdf.set_line_width(0.6)
                 
                 y_rect = pdf.get_y()
-                # Ancho reducido a 105mm (mitad de la página aproximadamente), altura 30mm
                 pdf.rect(10, y_rect, 105, 30) 
                 
                 pdf.set_xy(12, y_rect + 2)
                 pdf.set_font('Arial', 'B', 9)
-                pdf.cell(100, 5, limpiar_texto(f"CLIENTE: {cliente_nombre}"), 0, 1) # RUC movido abajo
+                pdf.cell(100, 5, limpiar_texto(f"CLIENTE: {cliente_nombre}"), 0, 1) 
                 
                 pdf.set_x(12)
                 pdf.cell(100, 5, limpiar_texto(f"RUC: {cliente_ruc}"), 0, 1)
@@ -287,7 +287,7 @@ if project_file and db_file:
                 pdf.set_x(12)
                 pdf.cell(100, 5, f"FECHA: {datetime.now().strftime('%d/%m/%Y')}", 0, 1)
                 
-                pdf.ln(8) # Salto de línea después del recuadro
+                pdf.ln(8) 
                 
                 pdf.section_title(f"RESUMEN EJECUTIVO: {cliente_nombre} - {proyecto_nombre}")
                 pdf.ln(2)
@@ -327,57 +327,4 @@ if project_file and db_file:
 
                 sistemas_unicos = st.session_state.df_master['Partida'].unique()
                 for sist in sistemas_unicos:
-                    df_sist = st.session_state.df_master[st.session_state.df_master['Partida'] == sist]
-                    if not df_sist.empty:
-                        pdf.section_title(f"DETALLE: {sist}")
-                        total_sis = pdf.chapter_body(df_sist)
-                        pdf.set_font('Arial', 'B', 9)
-                        pdf.cell(160, 6, 'SUBTOTAL SISTEMA:', 1, 0, 'R')
-                        pdf.cell(30, 6, f"{total_sis:,.2f}", 1, 1, 'R')
-                        pdf.ln(5)
-                
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                    pdf.output(tmp.name)
-                    with open(tmp.name, "rb") as f:
-                        return f.read()
-
-            st.download_button(
-                label="📄 Descargar Presupuesto (PDF)",
-                data=generar_pdf_bytes(),
-                file_name=f"Presupuesto_{cotizacion_num}.pdf",
-                mime="application/pdf",
-                type="primary"
-            )
-
-        with c_der:
-            with st.container(border=True):
-                resumen_grafico = st.session_state.df_master.groupby('Partida')[['Total']].sum().reset_index()
-                fig = px.pie(
-                    resumen_grafico, 
-                    values='Total', 
-                    names='Partida', 
-                    hole=0.45, 
-                    title="Distribución de Costos por Sistema"
-                )
-                
-                fig.update_traces(
-                    textposition='outside',
-                    textinfo='percent+label',
-                    textfont=dict(size=14, color='black') 
-                )
-                
-                fig.update_layout(
-                    legend=dict(
-                        font=dict(size=16), 
-                        orientation="h",
-                        yanchor="bottom", y=-0.5 
-                    ),
-                    margin=dict(t=40, b=40, l=40, r=40)
-                )
-                st.plotly_chart(fig, use_container_width=True)
-
-    except Exception as e:
-        st.error(f"⚠️ Error: {e}")
-        st.write("Presiona F5 para refrescar la página.")
-else:
-    st.info("👋 Sube tus archivos para comenzar.")
+                    df_sist = st.session_state.df_master[st.session_state.df_master['Partida'] ==
