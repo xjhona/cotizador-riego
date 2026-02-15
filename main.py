@@ -18,7 +18,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="main-header">🌱 Cotizador de Proyectos de Riego</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Vibe coded by JhonatanChilet</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Vibe coded by Jhonatan Chilet</div>', unsafe_allow_html=True)
 st.markdown("---")
 
 def limpiar_texto(texto):
@@ -133,7 +133,6 @@ if project_file and db_file:
             df_final['Total'] = df_final['Cantidad'] * df_final['Precio']
             
             df_final.insert(0, 'Item', range(1, len(df_final) + 1))
-            # Guardamos con un índice limpio y original
             st.session_state.df_master = df_final.reset_index(drop=True)
 
         # --- FILTROS ---
@@ -159,9 +158,9 @@ if project_file and db_file:
         elif orden == "Partida (Agrupado)": df_view = df_view.sort_values(by=['Partida', 'Descripcion'])
         else: df_view = df_view.sort_values(by='Item', ascending=True)
 
-        st.info("💡 **Para añadir:** Clic en 'Add row' abajo. **Para borrar:** Selecciona la casilla izquierda de la fila y presiona tecla 'Suprimir' o el ícono 🗑️.")
-        
-        # --- TABLA EDITABLE ROBUSTA ---
+        st.info("💡 **Cómo usar:** Haz clic en 'Add row' para agregar. Llena los datos tranquilamente. Cuando termines, dale al botón verde de abajo para actualizar los cálculos y gráficos.")
+
+        # --- TABLA EDITABLE ---
         edited_df = st.data_editor(
             df_view,
             column_config={
@@ -174,28 +173,26 @@ if project_file and db_file:
                 "Unidades": st.column_config.TextColumn("Und."),
                 "Codigo": st.column_config.TextColumn("Cód.", disabled=False),
             },
-            hide_index=False, # Necesario para que puedan eliminar filas nativamente
+            hide_index=True, # CORRECCIÓN: Oculta la doble numeración visual
             use_container_width=True,
             key="editor_principal",
             num_rows="dynamic",
-            height=500
+            height=450
         )
 
-        # --- LÓGICA DE ACTUALIZACIÓN (SIN RERUN AGRESIVO) ---
+        # --- LÓGICA DE GUARDADO EN SEGUNDO PLANO ---
         if not edited_df.equals(df_view):
             
-            # 1. Rellenar Textos Vacíos de forma segura
+            # Limpieza y cálculos automáticos internos
             edited_df['Partida'] = edited_df['Partida'].fillna("NUEVO SISTEMA")
             edited_df['Descripcion'] = edited_df['Descripcion'].fillna("")
             edited_df['Codigo'] = edited_df['Codigo'].fillna("S.C")
             edited_df['Unidades'] = edited_df['Unidades'].fillna("Und.")
 
-            # 2. Calcular Totales matemáticamente seguros
             edited_df['Cantidad'] = pd.to_numeric(edited_df['Cantidad'], errors='coerce').fillna(0)
             edited_df['Precio'] = pd.to_numeric(edited_df['Precio'], errors='coerce').fillna(0)
-            edited_df['Total'] = edited_df['Cantidad'] * edited_df['Precio']
+            edited_df['Total'] = edited_df['Cantidad'] * edited_df['Precio'] # Multiplicación
             
-            # 3. Asignar N° de Item si está vacío sin romper el orden
             if 'Item' in edited_df.columns:
                 edited_df['Item'] = pd.to_numeric(edited_df['Item'], errors='coerce')
                 max_item = st.session_state.df_master['Item'].max()
@@ -206,25 +203,27 @@ if project_file and db_file:
                     n_missing = mask_nan.sum()
                     edited_df.loc[mask_nan, 'Item'] = range(int(max_item) + 1, int(max_item) + 1 + n_missing)
 
-            # 4. SINCRONIZACIÓN PERFECTA DE ÍNDICES CON EL MASTER
-            # Actualizamos las filas que ya existían
+            # Sincronización segura con los datos maestros
             existing_indices = edited_df.index.intersection(st.session_state.df_master.index)
             st.session_state.df_master.loc[existing_indices] = edited_df.loc[existing_indices]
             
-            # Anexamos las filas recién creadas
             new_indices = edited_df.index.difference(st.session_state.df_master.index)
             if not new_indices.empty:
                 st.session_state.df_master = pd.concat([st.session_state.df_master, edited_df.loc[new_indices]])
                 
-            # Eliminamos las filas que el usuario borró con la tecla Suprimir
             deleted_indices = df_view.index.difference(edited_df.index)
             if not deleted_indices.empty:
                 st.session_state.df_master.drop(index=deleted_indices, inplace=True)
-            
-            # MAGIA: No usamos st.rerun() aquí. Esto permite que el cursor se quede donde está.
-            # Los cálculos de abajo (Dashboard) usarán los datos frescos instantáneamente.
 
-        # --- CÁLCULOS FINALES ---
+        # --- NUEVO BOTÓN DE ACTUALIZACIÓN ---
+        st.markdown("<br>", unsafe_allow_html=True)
+        col_espacio, col_boton, col_espacio2 = st.columns([1, 2, 1])
+        with col_boton:
+            if st.button("🔄 Recalcular y Actualizar Dashboard", type="primary", use_container_width=True):
+                st.session_state.df_master = st.session_state.df_master.sort_values(by='Item').reset_index(drop=True)
+                st.rerun()
+
+        # --- CÁLCULOS FINALES (Se actualizan al presionar el botón) ---
         total_neto = st.session_state.df_master['Total'].sum()
         igv = total_neto * 0.18
         total_venta = total_neto + igv
@@ -320,7 +319,7 @@ if project_file and db_file:
                         pdf.section_title(f"DETALLE: {sist}")
                         total_sis = pdf.chapter_body(df_sist)
                         pdf.set_font('Arial', 'B', 9)
-                        pdf.cell(160, 6, 'SUBTOTAL SISTEMA:', 1, 0, 'R')
+                        pdf.cell(160, 6, 'SUB बुन्देल SUBTOTAL SISTEMA:', 1, 0, 'R')
                         pdf.cell(30, 6, f"{total_sis:,.2f}", 1, 1, 'R')
                         pdf.ln(5)
                 
@@ -340,29 +339,33 @@ if project_file and db_file:
         with c_der:
             with st.container(border=True):
                 resumen_grafico = st.session_state.df_master.groupby('Partida')[['Total']].sum().reset_index()
-                fig = px.pie(
-                    resumen_grafico, 
-                    values='Total', 
-                    names='Partida', 
-                    hole=0.45, 
-                    title="Distribución de Costos por Sistema"
-                )
-                
-                fig.update_traces(
-                    textposition='outside',
-                    textinfo='percent+label',
-                    textfont=dict(size=14, color='black') 
-                )
-                
-                fig.update_layout(
-                    legend=dict(
-                        font=dict(size=16), 
-                        orientation="h",
-                        yanchor="bottom", y=-0.5 
-                    ),
-                    margin=dict(t=40, b=40, l=40, r=40)
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                # Evitar graficar si todo es cero
+                if resumen_grafico['Total'].sum() > 0:
+                    fig = px.pie(
+                        resumen_grafico, 
+                        values='Total', 
+                        names='Partida', 
+                        hole=0.45, 
+                        title="Distribución de Costos por Sistema"
+                    )
+                    
+                    fig.update_traces(
+                        textposition='outside',
+                        textinfo='percent+label',
+                        textfont=dict(size=14, color='black') 
+                    )
+                    
+                    fig.update_layout(
+                        legend=dict(
+                            font=dict(size=16), 
+                            orientation="h",
+                            yanchor="bottom", y=-0.5 
+                        ),
+                        margin=dict(t=40, b=40, l=40, r=40)
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("Aún no hay costos asignados para generar el gráfico.")
 
     except Exception as e:
         st.error(f"⚠️ Error de datos: Revisa que los archivos sean correctos. Detalle: {e}")
