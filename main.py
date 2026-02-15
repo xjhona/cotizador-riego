@@ -174,7 +174,6 @@ if project_file and db_file:
         with col3:
             orden = st.selectbox("🔃 Ordenar por:", ["N° de Fila (Item)", "Partida (Agrupado)", "Precio TOTAL (Mayor a Menor)", "Cantidad (Mayor a Menor)"])
 
-        # Generar vista actual sin modificar estado maestro
         df_view = st.session_state.df_master.copy()
         
         if busqueda:
@@ -190,7 +189,7 @@ if project_file and db_file:
 
         st.info("💡 **Cómo usar:** Haz clic en 'Add row'. Escribe tranquilamente todos tus datos (la tabla no saltará). Al terminar, presiona el botón verde de abajo.")
 
-        # --- TABLA EDITABLE (AHORA TOTALMENTE PASIVA) ---
+        # --- TABLA EDITABLE ---
         edited_df = st.data_editor(
             df_view,
             column_config={
@@ -210,37 +209,49 @@ if project_file and db_file:
             height=450
         )
 
-        # --- BOTÓN DE RECALCULAR Y ACTUALIZAR (ÚNICO PUNTO DE CAMBIO) ---
+        # --- LÓGICA DE GUARDADO EN SEGUNDO PLANO ---
+        if not edited_df.equals(df_view):
+            
+            edited_df['Partida'] = edited_df['Partida'].fillna("NUEVO SISTEMA")
+            edited_df['Descripcion'] = edited_df['Descripcion'].fillna("")
+            edited_df['Codigo'] = edited_df['Codigo'].fillna("S.C")
+            edited_df['Unidades'] = edited_df['Unidades'].fillna("Und.")
+
+            edited_df['Cantidad'] = pd.to_numeric(edited_df['Cantidad'], errors='coerce').fillna(0)
+            edited_df['Precio'] = pd.to_numeric(edited_df['Precio'], errors='coerce').fillna(0)
+            edited_df['Total'] = edited_df['Cantidad'] * edited_df['Precio'] 
+            
+            if 'Item' in edited_df.columns:
+                edited_df['Item'] = pd.to_numeric(edited_df['Item'], errors='coerce')
+                max_item = st.session_state.df_master['Item'].max()
+                if pd.isna(max_item): max_item = 0
+                
+                mask_nan = edited_df['Item'].isna()
+                if mask_nan.any():
+                    n_missing = mask_nan.sum()
+                    edited_df.loc[mask_nan, 'Item'] = range(int(max_item) + 1, int(max_item) + 1 + n_missing)
+
+            existing_indices = edited_df.index.intersection(st.session_state.df_master.index)
+            st.session_state.df_master.loc[existing_indices] = edited_df.loc[existing_indices]
+            
+            new_indices = edited_df.index.difference(st.session_state.df_master.index)
+            if not new_indices.empty:
+                st.session_state.df_master = pd.concat([st.session_state.df_master, edited_df.loc[new_indices]])
+                
+            deleted_indices = df_view.index.difference(edited_df.index)
+            if not deleted_indices.empty:
+                st.session_state.df_master.drop(index=deleted_indices, inplace=True, errors='ignore')
+
+        # --- BOTÓN DE RECALCULAR Y ACTUALIZAR ---
         st.markdown("<br>", unsafe_allow_html=True)
         col_espacio, col_boton, col_espacio2 = st.columns([1, 2, 1])
         with col_boton:
             if st.button("🔄 Recalcular y Actualizar Dashboard", type="primary", use_container_width=True):
-                
-                # Sincronización estricta bajo demanda
-                existing_indices = edited_df.index.intersection(st.session_state.df_master.index)
-                st.session_state.df_master.loc[existing_indices] = edited_df.loc[existing_indices]
-                
-                new_indices = edited_df.index.difference(st.session_state.df_master.index)
-                if not new_indices.empty:
-                    st.session_state.df_master = pd.concat([st.session_state.df_master, edited_df.loc[new_indices]])
-                    
-                deleted_indices = df_view.index.difference(edited_df.index)
-                if not deleted_indices.empty:
-                    st.session_state.df_master.drop(index=deleted_indices, inplace=True, errors='ignore')
-
-                # Limpieza y cálculos globales
-                st.session_state.df_master['Partida'] = st.session_state.df_master['Partida'].fillna("NUEVO SISTEMA")
-                st.session_state.df_master['Descripcion'] = st.session_state.df_master['Descripcion'].fillna("")
-                st.session_state.df_master['Codigo'] = st.session_state.df_master['Codigo'].fillna("S.C")
-                st.session_state.df_master['Unidades'] = st.session_state.df_master['Unidades'].fillna("Und.")
-                
                 st.session_state.df_master['Cantidad'] = pd.to_numeric(st.session_state.df_master['Cantidad'], errors='coerce').fillna(0)
                 st.session_state.df_master['Precio'] = pd.to_numeric(st.session_state.df_master['Precio'], errors='coerce').fillna(0)
                 st.session_state.df_master['Total'] = st.session_state.df_master['Cantidad'] * st.session_state.df_master['Precio']
-                
                 st.session_state.df_master = st.session_state.df_master.sort_values(by='Item', na_position='last').reset_index(drop=True)
                 st.session_state.df_master['Item'] = range(1, len(st.session_state.df_master) + 1)
-                
                 st.rerun()
 
         # --- CÁLCULOS FINALES ---
@@ -254,7 +265,7 @@ if project_file and db_file:
 
         c_izq, c_der = st.columns([1, 1.2])
 
-        # Creamos la figura Donut primero para usarla tanto en Dashboard como en PDF
+        # Creamos la figura Donut
         resumen_grafico = st.session_state.df_master.groupby('Partida')[['Total']].sum().reset_index()
         fig_donut = None
         if resumen_grafico['Total'].sum() > 0:
@@ -281,40 +292,35 @@ if project_file and db_file:
                 pdf = PresupuestoPDF()
                 pdf.add_page()
                 
-                # --- TARJETA DE ENCABEZADO (CLIENTE + VENDEDOR) ---
+                # --- TARJETA DE ENCABEZADO ---
                 y_rect = pdf.get_y()
                 pdf.set_fill_color(245, 248, 245) 
                 pdf.rect(10, y_rect, 190, 26, 'F')
                 pdf.set_fill_color(46, 125, 50) 
                 pdf.rect(10, y_rect, 2, 26, 'F')
                 
-                # Columna Izquierda: CLIENTE
                 pdf.set_xy(15, y_rect + 4)
                 pdf.set_font('Arial', 'B', 8)
                 pdf.set_text_color(100, 100, 100)
                 pdf.cell(90, 4, "DATOS DEL CLIENTE", 0, 0)
                 
-                # Columna Derecha: VENDEDOR
                 pdf.set_xy(110, y_rect + 4)
                 pdf.cell(90, 4, "ATENDIDO POR", 0, 1)
                 
                 pdf.set_text_color(0, 0, 0)
                 
-                # Fila 1
                 pdf.set_x(15)
                 pdf.set_font('Arial', 'B', 9)
                 pdf.cell(95, 5, limpiar_texto(cliente_nombre), 0, 0) 
                 pdf.set_x(110)
                 pdf.cell(90, 5, limpiar_texto(vendedor_nombre), 0, 1)
                 
-                # Fila 2
                 pdf.set_x(15)
                 pdf.set_font('Arial', '', 9)
                 pdf.cell(95, 5, limpiar_texto(f"RUC: {cliente_ruc}"), 0, 0)
                 pdf.set_x(110)
                 pdf.cell(90, 5, limpiar_texto(f"Celular: {vendedor_celular}"), 0, 1)
                 
-                # Fila 3
                 pdf.set_x(15)
                 pdf.cell(95, 5, limpiar_texto(f"Lugar: {cliente_lugar}"), 0, 0)
                 pdf.set_x(110)
@@ -322,54 +328,61 @@ if project_file and db_file:
                 
                 pdf.ln(6) 
                 
-                # --- RESUMEN EJECUTIVO (PÁGINA 1) ---
-                pdf.section_title(f"Resumen: {proyecto_nombre}")
-                
+                # Preparamos los datos del resumen
                 resumen = st.session_state.df_master.groupby('Partida')[['Total']].sum().reset_index()
                 resumen.insert(0, 'N°', range(1, len(resumen) + 1)) 
                 
-                pdf.set_font('Arial', 'B', 9)
-                pdf.set_fill_color(235, 235, 235)
-                pdf.set_text_color(50, 50, 50)
-                pdf.set_draw_color(255, 255, 255)
-                
-                pdf.cell(10, 7, 'N°', 1, 0, 'C', 1)
-                pdf.cell(130, 7, 'Sistema / Partida', 1, 0, 'L', 1)
-                pdf.cell(50, 7, 'Monto ($)', 1, 1, 'R', 1)
-                
-                pdf.set_font('Arial', '', 9)
-                pdf.set_text_color(0, 0, 0)
-                fill_resumen = False
-                for i, row in resumen.iterrows():
-                    pdf.set_fill_color(248, 250, 248) if fill_resumen else pdf.set_fill_color(255, 255, 255)
-                    pdf.cell(10, 6, str(row['N°']), 0, 0, 'C', fill_resumen)
-                    pdf.cell(130, 6, limpiar_texto(row['Partida']), 0, 0, 'L', fill_resumen)
-                    pdf.cell(50, 6, f"$ {row['Total']:,.2f}", 0, 1, 'R', fill_resumen)
-                    fill_resumen = not fill_resumen
-                
-                # TOTALES RESUMEN EJECUTIVO (PÁGINA 1) - RECUPERADO
-                pdf.ln(5)
-                pdf.set_font('Arial', '', 11)
-                pdf.cell(140, 7, 'TOTAL NETO (SIN IGV):', 0, 0, 'R')
-                pdf.cell(50, 7, f"$ {total_neto:,.2f}", 0, 1, 'R')
-                
-                pdf.cell(140, 7, 'IGV (18%):', 0, 0, 'R')
-                pdf.cell(50, 7, f"$ {igv:,.2f}", 0, 1, 'R')
-                
-                pdf.set_font('Arial', 'B', 14)
-                pdf.set_text_color(46, 125, 50) 
-                pdf.cell(140, 10, 'VALOR VENTA TOTAL:', 0, 0, 'R')
-                pdf.cell(50, 10, f"$ {total_venta:,.2f}", 0, 1, 'R')
-                
-                pdf.set_font('Arial', 'B', 11)
-                pdf.set_text_color(211, 47, 47) 
-                pdf.cell(140, 7, f'COSTO POR HECTAREA ({area_ha} Ha):', 0, 0, 'R')
-                pdf.cell(50, 7, f"$ {precio_ha:,.2f}", 0, 1, 'R')
-                
-                pdf.set_text_color(0, 0, 0)
-                pdf.ln(5)
+                # --- FUNCIÓN INTERNA PARA DIBUJAR LA TABLA DE RESUMEN Y TOTALES ---
+                # Al encapsularlo aquí, garantizamos que imprima exactamente lo mismo en ambas hojas.
+                def dibujar_resumen_y_totales(pdf_obj):
+                    # Cabecera de la tabla
+                    pdf_obj.set_font('Arial', 'B', 9)
+                    pdf_obj.set_fill_color(235, 235, 235)
+                    pdf_obj.set_text_color(50, 50, 50)
+                    pdf_obj.set_draw_color(255, 255, 255)
+                    
+                    pdf_obj.cell(10, 7, 'N°', 1, 0, 'C', 1)
+                    pdf_obj.cell(130, 7, 'Sistema / Partida', 1, 0, 'L', 1)
+                    pdf_obj.cell(50, 7, 'Monto ($)', 1, 1, 'R', 1)
+                    
+                    # Filas de la tabla (Sistemas)
+                    pdf_obj.set_font('Arial', '', 9)
+                    pdf_obj.set_text_color(0, 0, 0)
+                    fill_resumen = False
+                    for i, row in resumen.iterrows():
+                        pdf_obj.set_fill_color(248, 250, 248) if fill_resumen else pdf_obj.set_fill_color(255, 255, 255)
+                        pdf_obj.cell(10, 6, str(row['N°']), 0, 0, 'C', fill_resumen)
+                        pdf_obj.cell(130, 6, limpiar_texto(row['Partida']), 0, 0, 'L', fill_resumen)
+                        pdf_obj.cell(50, 6, f"$ {row['Total']:,.2f}", 0, 1, 'R', fill_resumen)
+                        fill_resumen = not fill_resumen
+                    
+                    # Bloque Financiero (Totales de Venta, IGV, etc.)
+                    pdf_obj.ln(5)
+                    pdf_obj.set_font('Arial', '', 11)
+                    pdf_obj.cell(140, 7, 'TOTAL NETO (SIN IGV):', 0, 0, 'R')
+                    pdf_obj.cell(50, 7, f"$ {total_neto:,.2f}", 0, 1, 'R')
+                    
+                    pdf_obj.cell(140, 7, 'IGV (18%):', 0, 0, 'R')
+                    pdf_obj.cell(50, 7, f"$ {igv:,.2f}", 0, 1, 'R')
+                    
+                    pdf_obj.set_font('Arial', 'B', 14)
+                    pdf_obj.set_text_color(46, 125, 50) 
+                    pdf_obj.cell(140, 10, 'VALOR VENTA TOTAL:', 0, 0, 'R')
+                    pdf_obj.cell(50, 10, f"$ {total_venta:,.2f}", 0, 1, 'R')
+                    
+                    pdf_obj.set_font('Arial', 'B', 11)
+                    pdf_obj.set_text_color(211, 47, 47) 
+                    pdf_obj.cell(140, 7, f'COSTO POR HECTAREA ({area_ha} Ha):', 0, 0, 'R')
+                    pdf_obj.cell(50, 7, f"$ {precio_ha:,.2f}", 0, 1, 'R')
+                    
+                    pdf_obj.set_text_color(0, 0, 0)
+                    pdf_obj.ln(8)
 
-                # --- DETALLES DE CADA SISTEMA (ORDENADOS POR PRECIO) ---
+                # --- 1. DIBUJAR RESUMEN EN LA HOJA 1 ---
+                pdf.section_title(f"Resumen: {proyecto_nombre}")
+                dibujar_resumen_y_totales(pdf)
+
+                # --- 2. DETALLES DE CADA SISTEMA ---
                 sistemas_unicos = st.session_state.df_master['Partida'].unique()
                 for sist in sistemas_unicos:
                     df_sist = st.session_state.df_master[st.session_state.df_master['Partida'] == sist].copy()
@@ -386,53 +399,33 @@ if project_file and db_file:
                         pdf.set_text_color(0, 0, 0)
                         pdf.ln(3)
 
-                # --- SECCIÓN FINAL: REPETIR RESUMEN FINANCIERO Y MOSTRAR DONUT BLANCO ---
+                # --- 3. DIBUJAR RESUMEN EN LA ÚLTIMA HOJA CON LA DONUT ---
                 pdf.add_page() 
-                
                 pdf.section_title("Resumen Financiero y Distribucion")
+                dibujar_resumen_y_totales(pdf)
                 
-                # Bloque Financiero Final (PÁGINA FINAL)
-                pdf.set_font('Arial', '', 11)
-                pdf.cell(140, 7, 'TOTAL NETO (SIN IGV):', 0, 0, 'R')
-                pdf.cell(50, 7, f"$ {total_neto:,.2f}", 0, 1, 'R')
-                
-                pdf.cell(140, 7, 'IGV (18%):', 0, 0, 'R')
-                pdf.cell(50, 7, f"$ {igv:,.2f}", 0, 1, 'R')
-                
-                pdf.set_font('Arial', 'B', 14)
-                pdf.set_text_color(46, 125, 50) 
-                pdf.cell(140, 10, 'VALOR VENTA TOTAL:', 0, 0, 'R')
-                pdf.cell(50, 10, f"$ {total_venta:,.2f}", 0, 1, 'R')
-                
-                pdf.set_font('Arial', 'B', 11)
-                pdf.set_text_color(211, 47, 47) 
-                pdf.cell(140, 7, f'COSTO POR HECTAREA ({area_ha} Ha):', 0, 0, 'R')
-                pdf.cell(50, 7, f"$ {precio_ha:,.2f}", 0, 1, 'R')
-                
-                pdf.set_text_color(0, 0, 0)
-                pdf.ln(10)
-                
-                # Insertar Gráfico Donut (CON FONDO BLANCO OBLIGATORIO)
+                # Insertar Gráfico Donut (Solución para FPDF: Guardar como JPG sin transparencias)
                 if fig_donut:
                     try:
                         fig_pdf = px.pie(resumen_grafico, values='Total', names='Partida', hole=0.45)
                         fig_pdf.update_traces(textposition='outside', textinfo='percent+label', textfont=dict(size=18, color='black'))
-                        # Forzar el fondo a blanco para evitar el bug negro de kaleido
+                        # Obligamos al fondo a ser completamente blanco, nada de "transparentes"
                         fig_pdf.update_layout(
                             showlegend=False, 
                             margin=dict(t=10, b=10, l=10, r=10),
-                            paper_bgcolor='rgba(255,255,255,1)',
-                            plot_bgcolor='rgba(255,255,255,1)'
+                            paper_bgcolor='white',
+                            plot_bgcolor='white'
                         )
                         
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
-                            fig_pdf.write_image(tmp_img.name, width=800, height=500)
+                        # Usamos .jpg porque fpdf maneja los jpg perfecto, los png con canal alpha fallan (se ven negros)
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_img:
+                            fig_pdf.write_image(tmp_img.name, width=800, height=500, format='jpg')
                         
                         pdf.image(tmp_img.name, x=25, y=pdf.get_y(), w=160)
                         os.unlink(tmp_img.name)
                     except Exception as e:
                         pdf.set_font('Arial', 'I', 9)
-                        pdf.cell(0, 10, "* Nota: Para visualizar el grafico aqui, instala la libreria 'kaleido' en tu servidor.", 0, 1, 'C')
+                        pdf.cell(0, 10, f"* Nota: No se pudo generar la imagen del grafico ({e}).", 0, 1, 'C')
                 
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_final:
                     pdf.output(tmp_final.name)
