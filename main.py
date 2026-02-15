@@ -133,7 +133,8 @@ if project_file and db_file:
             df_final['Total'] = df_final['Cantidad'] * df_final['Precio']
             
             df_final.insert(0, 'Item', range(1, len(df_final) + 1))
-            st.session_state.df_master = df_final
+            # Guardamos con un índice limpio y original
+            st.session_state.df_master = df_final.reset_index(drop=True)
 
         # --- FILTROS ---
         st.header("📝 Editor de Cotización")
@@ -158,15 +159,12 @@ if project_file and db_file:
         elif orden == "Partida (Agrupado)": df_view = df_view.sort_values(by=['Partida', 'Descripcion'])
         else: df_view = df_view.sort_values(by='Item', ascending=True)
 
-        st.info("💡 **Para añadir:** Haz clic en 'Add row'. Puedes llenar todos los datos sin que el cursor salte. El Dashboard se actualizará en vivo.")
+        st.info("💡 **Para añadir:** Clic en 'Add row' abajo. **Para borrar:** Selecciona la casilla izquierda de la fila y presiona tecla 'Suprimir' o el ícono 🗑️.")
         
-        df_view.insert(0, '❌ Eliminar', False)
-
-        # --- TABLA EDITABLE ---
+        # --- TABLA EDITABLE ROBUSTA ---
         edited_df = st.data_editor(
             df_view,
             column_config={
-                "❌ Eliminar": st.column_config.CheckboxColumn("Borrar", default=False, width="small"),
                 "Item": st.column_config.NumberColumn("N°", format="%d", disabled=False),
                 "Total": st.column_config.NumberColumn("Total ($)", format="%.2f", disabled=True),
                 "Precio": st.column_config.NumberColumn("P. Unitario ($)", format="%.2f", min_value=0.0),
@@ -176,32 +174,28 @@ if project_file and db_file:
                 "Unidades": st.column_config.TextColumn("Und."),
                 "Codigo": st.column_config.TextColumn("Cód.", disabled=False),
             },
-            hide_index=True,
+            hide_index=False, # Necesario para que puedan eliminar filas nativamente
             use_container_width=True,
             key="editor_principal",
             num_rows="dynamic",
             height=500
         )
 
-        # --- LÓGICA DE ACTUALIZACIÓN (SIN PERDER EL FOCO) ---
+        # --- LÓGICA DE ACTUALIZACIÓN (SIN RERUN AGRESIVO) ---
         if not edited_df.equals(df_view):
             
-            necesita_recargar = False
-            if edited_df['❌ Eliminar'].any():
-                necesita_recargar = True
-            
-            edited_df = edited_df[edited_df['❌ Eliminar'] == False]
-            edited_df = edited_df.drop(columns=['❌ Eliminar']) 
-            
-            edited_df['Partida'] = edited_df['Partida'].apply(lambda x: "NUEVO SISTEMA" if pd.isna(x) or x is None else str(x))
-            edited_df['Descripcion'] = edited_df['Descripcion'].apply(lambda x: "" if pd.isna(x) or x is None else str(x))
-            edited_df['Codigo'] = edited_df['Codigo'].apply(lambda x: "S.C" if pd.isna(x) or x is None else str(x))
-            edited_df['Unidades'] = edited_df['Unidades'].apply(lambda x: "Und." if pd.isna(x) or x is None else str(x))
+            # 1. Rellenar Textos Vacíos de forma segura
+            edited_df['Partida'] = edited_df['Partida'].fillna("NUEVO SISTEMA")
+            edited_df['Descripcion'] = edited_df['Descripcion'].fillna("")
+            edited_df['Codigo'] = edited_df['Codigo'].fillna("S.C")
+            edited_df['Unidades'] = edited_df['Unidades'].fillna("Und.")
 
+            # 2. Calcular Totales matemáticamente seguros
             edited_df['Cantidad'] = pd.to_numeric(edited_df['Cantidad'], errors='coerce').fillna(0)
             edited_df['Precio'] = pd.to_numeric(edited_df['Precio'], errors='coerce').fillna(0)
             edited_df['Total'] = edited_df['Cantidad'] * edited_df['Precio']
             
+            # 3. Asignar N° de Item si está vacío sin romper el orden
             if 'Item' in edited_df.columns:
                 edited_df['Item'] = pd.to_numeric(edited_df['Item'], errors='coerce')
                 max_item = st.session_state.df_master['Item'].max()
@@ -212,19 +206,23 @@ if project_file and db_file:
                     n_missing = mask_nan.sum()
                     edited_df.loc[mask_nan, 'Item'] = range(int(max_item) + 1, int(max_item) + 1 + n_missing)
 
-            st.session_state.df_master.update(edited_df)
+            # 4. SINCRONIZACIÓN PERFECTA DE ÍNDICES CON EL MASTER
+            # Actualizamos las filas que ya existían
+            existing_indices = edited_df.index.intersection(st.session_state.df_master.index)
+            st.session_state.df_master.loc[existing_indices] = edited_df.loc[existing_indices]
             
-            nuevas_filas = edited_df[~edited_df.index.isin(st.session_state.df_master.index)]
-            if not nuevas_filas.empty:
-                st.session_state.df_master = pd.concat([st.session_state.df_master, nuevas_filas])
+            # Anexamos las filas recién creadas
+            new_indices = edited_df.index.difference(st.session_state.df_master.index)
+            if not new_indices.empty:
+                st.session_state.df_master = pd.concat([st.session_state.df_master, edited_df.loc[new_indices]])
                 
-            filas_borradas = df_view[~df_view.index.isin(edited_df.index)]
-            if not filas_borradas.empty:
-                st.session_state.df_master = st.session_state.df_master.drop(index=filas_borradas.index, errors='ignore')
-
-            if necesita_recargar:
-                st.session_state.df_master = st.session_state.df_master.sort_values(by='Item').reset_index(drop=True)
-                st.rerun()
+            # Eliminamos las filas que el usuario borró con la tecla Suprimir
+            deleted_indices = df_view.index.difference(edited_df.index)
+            if not deleted_indices.empty:
+                st.session_state.df_master.drop(index=deleted_indices, inplace=True)
+            
+            # MAGIA: No usamos st.rerun() aquí. Esto permite que el cursor se quede donde está.
+            # Los cálculos de abajo (Dashboard) usarán los datos frescos instantáneamente.
 
         # --- CÁLCULOS FINALES ---
         total_neto = st.session_state.df_master['Total'].sum()
@@ -367,7 +365,7 @@ if project_file and db_file:
                 st.plotly_chart(fig, use_container_width=True)
 
     except Exception as e:
-        st.error(f"⚠️ Error: {e}")
-        st.write("Presiona F5 para refrescar la página.")
+        st.error(f"⚠️ Error de datos: Revisa que los archivos sean correctos. Detalle: {e}")
+        st.write("Presiona F5 para limpiar la memoria si persiste el error.")
 else:
-    st.info("👋 Sube tus archivos para comenzar.")
+    st.info("👋 Sube tus archivos Excel en el panel lateral para comenzar.")
