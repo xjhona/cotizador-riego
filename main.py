@@ -25,7 +25,7 @@ def limpiar_texto(texto):
     if pd.isna(texto): return ""
     return str(texto).encode('latin-1', 'replace').decode('latin-1')
 
-# --- CLASE PARA EL PDF (DISEÑO ELEGANTE) ---
+# --- CLASE PARA EL PDF ---
 class PresupuestoPDF(FPDF):
     def header(self):
         y_inicial = 10
@@ -38,7 +38,7 @@ class PresupuestoPDF(FPDF):
             
         self.set_xy(margen_texto, y_inicial)
         self.set_font('Arial', 'B', 15)
-        self.set_text_color(46, 125, 50) # Verde Rivulis
+        self.set_text_color(46, 125, 50) 
         self.cell(80, 6, 'Rivulis Peru S.A.C.', 0, 2, 'L')
         
         self.set_font('Arial', '', 9)
@@ -46,7 +46,6 @@ class PresupuestoPDF(FPDF):
         self.cell(80, 5, 'Av. Primavera Nro. 517 Int. 206', 0, 2, 'L')
         self.cell(80, 5, 'https://es.rivulis.com/', 0, 0, 'L')
         
-        # Bloque Cotización Superior Derecha
         self.set_xy(140, y_inicial)
         self.set_font('Arial', 'B', 10)
         self.set_text_color(150, 150, 150)
@@ -60,7 +59,7 @@ class PresupuestoPDF(FPDF):
     def footer(self):
         self.set_y(-15)
         self.set_draw_color(200, 200, 200)
-        self.line(10, self.get_y(), 200, self.get_y()) # Línea separadora
+        self.line(10, self.get_y(), 200, self.get_y()) 
         self.set_font('Arial', 'I', 8)
         self.set_text_color(128, 128, 128)
         self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
@@ -70,20 +69,18 @@ class PresupuestoPDF(FPDF):
         self.set_font('Arial', 'B', 11)
         self.set_fill_color(46, 125, 50)
         self.set_text_color(255, 255, 255)
-        # Un título con fondo verde completo y texto blanco (muy limpio)
         self.cell(0, 7, f"  {limpiar_texto(title).upper()}", 0, 1, 'L', 1)
         self.ln(2)
 
     def chapter_body(self, data):
-        # Cabecera de Tabla (Fondo gris claro, texto oscuro)
         self.set_font('Arial', 'B', 9)
         self.set_fill_color(235, 235, 235)
         self.set_text_color(50, 50, 50)
-        self.set_draw_color(255, 255, 255) # Bordes blancos para separar
+        self.set_draw_color(255, 255, 255) 
         
         self.cell(10, 7, 'N°', 1, 0, 'C', 1) 
         self.cell(20, 7, 'Cod.', 1, 0, 'C', 1)
-        self.cell(90, 7, 'Descripcion', 1, 0, 'L', 1) # Alineado a la izquierda
+        self.cell(90, 7, 'Descripcion', 1, 0, 'L', 1) 
         self.cell(15, 7, 'Cant.', 1, 0, 'C', 1)
         self.cell(25, 7, 'P.Unit ($)', 1, 0, 'R', 1)
         self.cell(30, 7, 'Total ($)', 1, 1, 'R', 1)
@@ -91,18 +88,13 @@ class PresupuestoPDF(FPDF):
         self.set_font('Arial', '', 8)
         self.set_text_color(0, 0, 0)
         total_capitulo = 0
-        fill = False # Alternador para filas Zebra
+        fill = False 
         
         for index, row in data.iterrows():
             desc = (row['Descripcion'][:60] + '..') if len(str(row['Descripcion'])) > 60 else str(row['Descripcion'])
             
-            # Color intercalado (Zebra Striping)
-            if fill:
-                self.set_fill_color(248, 250, 248) # Un verde grisáceo hiper sutil
-            else:
-                self.set_fill_color(255, 255, 255)
+            self.set_fill_color(248, 250, 248) if fill else self.set_fill_color(255, 255, 255)
                 
-            # Celdas sin borde lateral, solo fondo
             self.cell(10, 6, str(int(row['Item'])), 0, 0, 'C', fill)
             self.cell(20, 6, limpiar_texto(row['Codigo']), 0, 0, 'C', fill)
             self.cell(90, 6, limpiar_texto(desc), 0, 0, 'L', fill)
@@ -113,9 +105,8 @@ class PresupuestoPDF(FPDF):
             self.cell(30, 6, f"{total_item:,.2f}", 0, 1, 'R', fill)
             
             total_capitulo += total_item
-            fill = not fill # Cambia el color para la siguiente fila
+            fill = not fill 
             
-        # Línea de cierre sutil de la tabla
         self.set_draw_color(200, 200, 200)
         self.line(10, self.get_y(), 200, self.get_y())
         self.ln(2)
@@ -127,13 +118,19 @@ db_file = st.sidebar.file_uploader("Base de Precios (Excel)", type=["xlsx"])
 project_file = st.sidebar.file_uploader("Metrados (Excel)", type=["xlsx"])
 
 st.sidebar.markdown("---")
-st.sidebar.header("📄 2. Datos del Proyecto (Para PDF)")
+st.sidebar.header("📄 2. Datos del Cliente")
 cliente_nombre = st.sidebar.text_input("Cliente / Razón Social", "AGROINDUSTRIAL DEL NORTE S.A.C.")
 cliente_ruc = st.sidebar.text_input("RUC", "20123456789")
 cliente_lugar = st.sidebar.text_input("Lugar de Entrega", "Fundo El Porvenir, km 165")
-cotizacion_num = st.sidebar.text_input("N° Cotización", "COT-2026-005")
 proyecto_nombre = st.sidebar.text_input("Nombre del Proyecto", "PROYECTO DE RIEGO POR GOTEO PARA EL CULTIVO DE ARÁNDANO")
 area_ha = st.sidebar.number_input("Área del Proyecto (Hectáreas)", min_value=0.1, value=10.0, step=0.5)
+
+st.sidebar.markdown("---")
+st.sidebar.header("👤 3. Datos del Vendedor")
+cotizacion_num = st.sidebar.text_input("N° Cotización", "COT-2026-005")
+vendedor_nombre = st.sidebar.text_input("Ejecutivo Comercial", "Ing. Jhonatan Chilet")
+vendedor_celular = st.sidebar.text_input("Número Celular", "+51 987 654 321")
+vendedor_correo = st.sidebar.text_input("Correo Electrónico", "jchilet@rivulis.com")
 
 st.session_state['num_cot'] = cotizacion_num
 
@@ -268,6 +265,16 @@ if project_file and db_file:
 
         c_izq, c_der = st.columns([1, 1.2])
 
+        # Creamos la figura Donut primero para usarla tanto en Dashboard como en PDF
+        resumen_grafico = st.session_state.df_master.groupby('Partida')[['Total']].sum().reset_index()
+        fig_donut = None
+        if resumen_grafico['Total'].sum() > 0:
+            fig_donut = px.pie(
+                resumen_grafico, values='Total', names='Partida', hole=0.45, title="Distribución de Costos por Sistema"
+            )
+            fig_donut.update_traces(textposition='outside', textinfo='percent+label', textfont=dict(size=14, color='black'))
+            fig_donut.update_layout(legend=dict(font=dict(size=16), orientation="h", yanchor="bottom", y=-0.5), margin=dict(t=40, b=40, l=40, r=40))
+
         with c_izq:
             st.markdown(f"""
             <div class="resumen-caja">
@@ -285,44 +292,53 @@ if project_file and db_file:
                 pdf = PresupuestoPDF()
                 pdf.add_page()
                 
-                # --- DISEÑO ELEGANTE: RECUADRO DEL CLIENTE TIPO TARJETA ---
+                # --- NUEVA TARJETA DE ENCABEZADO (CLIENTE + VENDEDOR) ---
                 y_rect = pdf.get_y()
-                pdf.set_fill_color(245, 248, 245) # Gris/Verde super claro
+                pdf.set_fill_color(245, 248, 245) 
                 pdf.rect(10, y_rect, 190, 26, 'F')
-                pdf.set_fill_color(46, 125, 50) # Acento visual a la izquierda
+                pdf.set_fill_color(46, 125, 50) 
                 pdf.rect(10, y_rect, 2, 26, 'F')
                 
+                # Columna Izquierda: CLIENTE
                 pdf.set_xy(15, y_rect + 4)
-                pdf.set_font('Arial', 'B', 9)
-                pdf.cell(100, 5, limpiar_texto(f"CLIENTE: {cliente_nombre}"), 0, 0) 
+                pdf.set_font('Arial', 'B', 8)
+                pdf.set_text_color(100, 100, 100)
+                pdf.cell(90, 4, "DATOS DEL CLIENTE", 0, 0)
                 
-                # Fecha alineada a la derecha dentro de la tarjeta
-                pdf.set_font('Arial', '', 9)
-                pdf.cell(80, 5, f"FECHA: {datetime.now().strftime('%d/%m/%Y')}", 0, 1, 'R')
+                # Columna Derecha: VENDEDOR
+                pdf.set_xy(110, y_rect + 4)
+                pdf.cell(90, 4, "ATENDIDO POR", 0, 1)
                 
+                pdf.set_text_color(0, 0, 0)
+                
+                # Fila 1
                 pdf.set_x(15)
                 pdf.set_font('Arial', 'B', 9)
-                pdf.cell(100, 5, limpiar_texto(f"RUC: {cliente_ruc}"), 0, 1)
+                pdf.cell(95, 5, limpiar_texto(cliente_nombre), 0, 0) 
+                pdf.set_x(110)
+                pdf.cell(90, 5, limpiar_texto(vendedor_nombre), 0, 1)
                 
+                # Fila 2
                 pdf.set_x(15)
                 pdf.set_font('Arial', '', 9)
-                pdf.cell(100, 5, limpiar_texto(f"LUGAR: {cliente_lugar}"), 0, 1)
+                pdf.cell(95, 5, limpiar_texto(f"RUC: {cliente_ruc}"), 0, 0)
+                pdf.set_x(110)
+                pdf.cell(90, 5, limpiar_texto(f"Celular: {vendedor_celular}"), 0, 1)
                 
+                # Fila 3
                 pdf.set_x(15)
-                pdf.cell(100, 5, limpiar_texto(f"ÁREA: {area_ha:,.2f} Hectáreas"), 0, 1)
+                pdf.cell(95, 5, limpiar_texto(f"Lugar: {cliente_lugar}"), 0, 0)
+                pdf.set_x(110)
+                pdf.cell(90, 5, limpiar_texto(f"Correo: {vendedor_correo}"), 0, 1)
                 
-                pdf.ln(8) 
+                pdf.ln(6) 
                 
-                # --- RESUMEN EJECUTIVO ELEGANTE ---
+                # --- RESUMEN EJECUTIVO (INICIO) ---
                 pdf.section_title(f"Resumen: {proyecto_nombre}")
-                
-                resumen = st.session_state.df_master.groupby('Partida')[['Total']].sum().reset_index()
-                resumen.insert(0, 'N°', range(1, len(resumen) + 1)) 
                 
                 # Cabecera Resumen
                 pdf.set_font('Arial', 'B', 9)
                 pdf.set_fill_color(235, 235, 235)
-                self_text_color = 50
                 pdf.set_text_color(50, 50, 50)
                 pdf.set_draw_color(255, 255, 255)
                 
@@ -340,47 +356,73 @@ if project_file and db_file:
                     pdf.cell(50, 6, f"$ {row['Total']:,.2f}", 0, 1, 'R', fill_resumen)
                     fill_resumen = not fill_resumen
                 
-                # Bloque Financiero Apilado (Limpio y claro)
                 pdf.ln(5)
-                pdf.set_font('Arial', '', 10)
-                pdf.cell(140, 6, 'TOTAL NETO (SIN IGV):', 0, 0, 'R')
-                pdf.cell(50, 6, f"$ {total_neto:,.2f}", 0, 1, 'R')
-                
-                pdf.cell(140, 6, 'IGV (18%):', 0, 0, 'R')
-                pdf.cell(50, 6, f"$ {igv:,.2f}", 0, 1, 'R')
-                
-                pdf.set_font('Arial', 'B', 12)
-                pdf.set_text_color(46, 125, 50) # Verde total
-                pdf.cell(140, 8, 'VALOR VENTA TOTAL:', 0, 0, 'R')
-                pdf.cell(50, 8, f"$ {total_venta:,.2f}", 0, 1, 'R')
-                
-                pdf.set_font('Arial', 'B', 10)
-                pdf.set_text_color(211, 47, 47) # Rojo costo
-                pdf.cell(140, 6, f'COSTO POR HECTAREA ({area_ha} Ha):', 0, 0, 'R')
-                pdf.cell(50, 6, f"$ {precio_ha:,.2f}", 0, 1, 'R')
-                
-                pdf.set_text_color(0, 0, 0)
-                pdf.ln(8)
 
-                # --- DETALLES DE CADA SISTEMA ---
+                # --- DETALLES DE CADA SISTEMA (ORDENADOS POR PRECIO) ---
                 sistemas_unicos = st.session_state.df_master['Partida'].unique()
                 for sist in sistemas_unicos:
-                    df_sist = st.session_state.df_master[st.session_state.df_master['Partida'] == sist]
+                    df_sist = st.session_state.df_master[st.session_state.df_master['Partida'] == sist].copy()
                     if not df_sist.empty:
+                        # ORDENAMIENTO: Mayor a menor precio total dentro del PDF
+                        df_sist = df_sist.sort_values(by='Total', ascending=False)
+                        
                         pdf.section_title(sist)
                         total_sis = pdf.chapter_body(df_sist)
                         
-                        # Subtotal visualmente limpio
                         pdf.set_font('Arial', 'B', 9)
                         pdf.set_text_color(46, 125, 50)
                         pdf.cell(160, 6, 'SUBTOTAL SISTEMA:', 0, 0, 'R')
                         pdf.cell(30, 6, f"$ {total_sis:,.2f}", 0, 1, 'R')
                         pdf.set_text_color(0, 0, 0)
                         pdf.ln(3)
+
+                # --- SECCIÓN FINAL: REPETIR RESUMEN FINANCIERO Y MOSTRAR DONUT ---
+                pdf.add_page() # Lo mandamos a una página final limpia
                 
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                    pdf.output(tmp.name)
-                    with open(tmp.name, "rb") as f:
+                pdf.section_title("Resumen Financiero y Distribución")
+                
+                # Bloque Financiero Final
+                pdf.set_font('Arial', '', 11)
+                pdf.cell(140, 7, 'TOTAL NETO (SIN IGV):', 0, 0, 'R')
+                pdf.cell(50, 7, f"$ {total_neto:,.2f}", 0, 1, 'R')
+                
+                pdf.cell(140, 7, 'IGV (18%):', 0, 0, 'R')
+                pdf.cell(50, 7, f"$ {igv:,.2f}", 0, 1, 'R')
+                
+                pdf.set_font('Arial', 'B', 14)
+                pdf.set_text_color(46, 125, 50) 
+                pdf.cell(140, 10, 'VALOR VENTA TOTAL:', 0, 0, 'R')
+                pdf.cell(50, 10, f"$ {total_venta:,.2f}", 0, 1, 'R')
+                
+                pdf.set_font('Arial', 'B', 11)
+                pdf.set_text_color(211, 47, 47) 
+                pdf.cell(140, 7, f'COSTO POR HECTAREA ({area_ha} Ha):', 0, 0, 'R')
+                pdf.cell(50, 7, f"$ {precio_ha:,.2f}", 0, 1, 'R')
+                
+                pdf.set_text_color(0, 0, 0)
+                pdf.ln(10)
+                
+                # Insertar Gráfico Donut (Requiere 'kaleido')
+                if fig_donut:
+                    try:
+                        # Creamos una versión del gráfico optimizada para impresión (sin leyendas sueltas)
+                        fig_pdf = px.pie(resumen_grafico, values='Total', names='Partida', hole=0.45)
+                        fig_pdf.update_traces(textposition='outside', textinfo='percent+label', textfont=dict(size=18, color='black'))
+                        fig_pdf.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10))
+                        
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
+                            fig_pdf.write_image(tmp_img.name, width=800, height=500)
+                        
+                        # Pegar la imagen en el PDF y centrarla
+                        pdf.image(tmp_img.name, x=25, y=pdf.get_y(), w=160)
+                        os.unlink(tmp_img.name)
+                    except Exception as e:
+                        pdf.set_font('Arial', 'I', 9)
+                        pdf.cell(0, 10, "* Nota: Para visualizar el grafico aqui, instala la libreria 'kaleido' en el servidor.", 0, 1, 'C')
+                
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_final:
+                    pdf.output(tmp_final.name)
+                    with open(tmp_final.name, "rb") as f:
                         return f.read()
 
             st.download_button(
@@ -393,31 +435,8 @@ if project_file and db_file:
 
         with c_der:
             with st.container(border=True):
-                resumen_grafico = st.session_state.df_master.groupby('Partida')[['Total']].sum().reset_index()
-                if resumen_grafico['Total'].sum() > 0:
-                    fig = px.pie(
-                        resumen_grafico, 
-                        values='Total', 
-                        names='Partida', 
-                        hole=0.45, 
-                        title="Distribución de Costos por Sistema"
-                    )
-                    
-                    fig.update_traces(
-                        textposition='outside',
-                        textinfo='percent+label',
-                        textfont=dict(size=14, color='black') 
-                    )
-                    
-                    fig.update_layout(
-                        legend=dict(
-                            font=dict(size=16), 
-                            orientation="h",
-                            yanchor="bottom", y=-0.5 
-                        ),
-                        margin=dict(t=40, b=40, l=40, r=40)
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
+                if fig_donut:
+                    st.plotly_chart(fig_donut, use_container_width=True)
                 else:
                     st.info("Aún no hay costos asignados para generar el gráfico.")
 
