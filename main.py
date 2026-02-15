@@ -174,6 +174,7 @@ if project_file and db_file:
         with col3:
             orden = st.selectbox("🔃 Ordenar por:", ["N° de Fila (Item)", "Partida (Agrupado)", "Precio TOTAL (Mayor a Menor)", "Cantidad (Mayor a Menor)"])
 
+        # Generar vista actual sin modificar estado maestro
         df_view = st.session_state.df_master.copy()
         
         if busqueda:
@@ -187,9 +188,9 @@ if project_file and db_file:
         elif orden == "Partida (Agrupado)": df_view = df_view.sort_values(by=['Partida', 'Descripcion'])
         else: df_view = df_view.sort_values(by='Item', ascending=True)
 
-        st.info("💡 **Cómo usar:** Haz clic en 'Add row' para agregar. Llena los datos **tranquilamente celda por celda**. Al terminar, haz clic en el botón verde de abajo para actualizar los cálculos.")
+        st.info("💡 **Cómo usar:** Haz clic en 'Add row'. Escribe tranquilamente todos tus datos (la tabla no saltará). Al terminar, presiona el botón verde de abajo.")
 
-        # --- TABLA EDITABLE ---
+        # --- TABLA EDITABLE (AHORA TOTALMENTE PASIVA) ---
         edited_df = st.data_editor(
             df_view,
             column_config={
@@ -209,49 +210,37 @@ if project_file and db_file:
             height=450
         )
 
-        # --- LÓGICA DE GUARDADO EN SEGUNDO PLANO ---
-        if not edited_df.equals(df_view):
-            
-            edited_df['Partida'] = edited_df['Partida'].fillna("NUEVO SISTEMA")
-            edited_df['Descripcion'] = edited_df['Descripcion'].fillna("")
-            edited_df['Codigo'] = edited_df['Codigo'].fillna("S.C")
-            edited_df['Unidades'] = edited_df['Unidades'].fillna("Und.")
-
-            edited_df['Cantidad'] = pd.to_numeric(edited_df['Cantidad'], errors='coerce').fillna(0)
-            edited_df['Precio'] = pd.to_numeric(edited_df['Precio'], errors='coerce').fillna(0)
-            edited_df['Total'] = edited_df['Cantidad'] * edited_df['Precio'] 
-            
-            if 'Item' in edited_df.columns:
-                edited_df['Item'] = pd.to_numeric(edited_df['Item'], errors='coerce')
-                max_item = st.session_state.df_master['Item'].max()
-                if pd.isna(max_item): max_item = 0
-                
-                mask_nan = edited_df['Item'].isna()
-                if mask_nan.any():
-                    n_missing = mask_nan.sum()
-                    edited_df.loc[mask_nan, 'Item'] = range(int(max_item) + 1, int(max_item) + 1 + n_missing)
-
-            existing_indices = edited_df.index.intersection(st.session_state.df_master.index)
-            st.session_state.df_master.loc[existing_indices] = edited_df.loc[existing_indices]
-            
-            new_indices = edited_df.index.difference(st.session_state.df_master.index)
-            if not new_indices.empty:
-                st.session_state.df_master = pd.concat([st.session_state.df_master, edited_df.loc[new_indices]])
-                
-            deleted_indices = df_view.index.difference(edited_df.index)
-            if not deleted_indices.empty:
-                st.session_state.df_master.drop(index=deleted_indices, inplace=True, errors='ignore')
-
-        # --- BOTÓN DE RECALCULAR Y ACTUALIZAR ---
+        # --- BOTÓN DE RECALCULAR Y ACTUALIZAR (ÚNICO PUNTO DE CAMBIO) ---
         st.markdown("<br>", unsafe_allow_html=True)
         col_espacio, col_boton, col_espacio2 = st.columns([1, 2, 1])
         with col_boton:
             if st.button("🔄 Recalcular y Actualizar Dashboard", type="primary", use_container_width=True):
+                
+                # Sincronización estricta bajo demanda
+                existing_indices = edited_df.index.intersection(st.session_state.df_master.index)
+                st.session_state.df_master.loc[existing_indices] = edited_df.loc[existing_indices]
+                
+                new_indices = edited_df.index.difference(st.session_state.df_master.index)
+                if not new_indices.empty:
+                    st.session_state.df_master = pd.concat([st.session_state.df_master, edited_df.loc[new_indices]])
+                    
+                deleted_indices = df_view.index.difference(edited_df.index)
+                if not deleted_indices.empty:
+                    st.session_state.df_master.drop(index=deleted_indices, inplace=True, errors='ignore')
+
+                # Limpieza y cálculos globales
+                st.session_state.df_master['Partida'] = st.session_state.df_master['Partida'].fillna("NUEVO SISTEMA")
+                st.session_state.df_master['Descripcion'] = st.session_state.df_master['Descripcion'].fillna("")
+                st.session_state.df_master['Codigo'] = st.session_state.df_master['Codigo'].fillna("S.C")
+                st.session_state.df_master['Unidades'] = st.session_state.df_master['Unidades'].fillna("Und.")
+                
                 st.session_state.df_master['Cantidad'] = pd.to_numeric(st.session_state.df_master['Cantidad'], errors='coerce').fillna(0)
                 st.session_state.df_master['Precio'] = pd.to_numeric(st.session_state.df_master['Precio'], errors='coerce').fillna(0)
                 st.session_state.df_master['Total'] = st.session_state.df_master['Cantidad'] * st.session_state.df_master['Precio']
+                
                 st.session_state.df_master = st.session_state.df_master.sort_values(by='Item', na_position='last').reset_index(drop=True)
                 st.session_state.df_master['Item'] = range(1, len(st.session_state.df_master) + 1)
+                
                 st.rerun()
 
         # --- CÁLCULOS FINALES ---
@@ -292,7 +281,7 @@ if project_file and db_file:
                 pdf = PresupuestoPDF()
                 pdf.add_page()
                 
-                # --- NUEVA TARJETA DE ENCABEZADO (CLIENTE + VENDEDOR) ---
+                # --- TARJETA DE ENCABEZADO (CLIENTE + VENDEDOR) ---
                 y_rect = pdf.get_y()
                 pdf.set_fill_color(245, 248, 245) 
                 pdf.rect(10, y_rect, 190, 26, 'F')
@@ -333,14 +322,12 @@ if project_file and db_file:
                 
                 pdf.ln(6) 
                 
-                # --- RESUMEN EJECUTIVO (INICIO) ---
+                # --- RESUMEN EJECUTIVO (PÁGINA 1) ---
                 pdf.section_title(f"Resumen: {proyecto_nombre}")
                 
-                # ¡AQUÍ ESTÁ LA CORRECCIÓN CLAVE! 
                 resumen = st.session_state.df_master.groupby('Partida')[['Total']].sum().reset_index()
                 resumen.insert(0, 'N°', range(1, len(resumen) + 1)) 
                 
-                # Cabecera Resumen
                 pdf.set_font('Arial', 'B', 9)
                 pdf.set_fill_color(235, 235, 235)
                 pdf.set_text_color(50, 50, 50)
@@ -360,6 +347,26 @@ if project_file and db_file:
                     pdf.cell(50, 6, f"$ {row['Total']:,.2f}", 0, 1, 'R', fill_resumen)
                     fill_resumen = not fill_resumen
                 
+                # TOTALES RESUMEN EJECUTIVO (PÁGINA 1) - RECUPERADO
+                pdf.ln(5)
+                pdf.set_font('Arial', '', 11)
+                pdf.cell(140, 7, 'TOTAL NETO (SIN IGV):', 0, 0, 'R')
+                pdf.cell(50, 7, f"$ {total_neto:,.2f}", 0, 1, 'R')
+                
+                pdf.cell(140, 7, 'IGV (18%):', 0, 0, 'R')
+                pdf.cell(50, 7, f"$ {igv:,.2f}", 0, 1, 'R')
+                
+                pdf.set_font('Arial', 'B', 14)
+                pdf.set_text_color(46, 125, 50) 
+                pdf.cell(140, 10, 'VALOR VENTA TOTAL:', 0, 0, 'R')
+                pdf.cell(50, 10, f"$ {total_venta:,.2f}", 0, 1, 'R')
+                
+                pdf.set_font('Arial', 'B', 11)
+                pdf.set_text_color(211, 47, 47) 
+                pdf.cell(140, 7, f'COSTO POR HECTAREA ({area_ha} Ha):', 0, 0, 'R')
+                pdf.cell(50, 7, f"$ {precio_ha:,.2f}", 0, 1, 'R')
+                
+                pdf.set_text_color(0, 0, 0)
                 pdf.ln(5)
 
                 # --- DETALLES DE CADA SISTEMA (ORDENADOS POR PRECIO) ---
@@ -379,12 +386,12 @@ if project_file and db_file:
                         pdf.set_text_color(0, 0, 0)
                         pdf.ln(3)
 
-                # --- SECCIÓN FINAL: REPETIR RESUMEN FINANCIERO Y MOSTRAR DONUT ---
+                # --- SECCIÓN FINAL: REPETIR RESUMEN FINANCIERO Y MOSTRAR DONUT BLANCO ---
                 pdf.add_page() 
                 
                 pdf.section_title("Resumen Financiero y Distribucion")
                 
-                # Bloque Financiero Final
+                # Bloque Financiero Final (PÁGINA FINAL)
                 pdf.set_font('Arial', '', 11)
                 pdf.cell(140, 7, 'TOTAL NETO (SIN IGV):', 0, 0, 'R')
                 pdf.cell(50, 7, f"$ {total_neto:,.2f}", 0, 1, 'R')
@@ -405,12 +412,18 @@ if project_file and db_file:
                 pdf.set_text_color(0, 0, 0)
                 pdf.ln(10)
                 
-                # Insertar Gráfico Donut
+                # Insertar Gráfico Donut (CON FONDO BLANCO OBLIGATORIO)
                 if fig_donut:
                     try:
                         fig_pdf = px.pie(resumen_grafico, values='Total', names='Partida', hole=0.45)
                         fig_pdf.update_traces(textposition='outside', textinfo='percent+label', textfont=dict(size=18, color='black'))
-                        fig_pdf.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10))
+                        # Forzar el fondo a blanco para evitar el bug negro de kaleido
+                        fig_pdf.update_layout(
+                            showlegend=False, 
+                            margin=dict(t=10, b=10, l=10, r=10),
+                            paper_bgcolor='rgba(255,255,255,1)',
+                            plot_bgcolor='rgba(255,255,255,1)'
+                        )
                         
                         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
                             fig_pdf.write_image(tmp_img.name, width=800, height=500)
@@ -419,7 +432,7 @@ if project_file and db_file:
                         os.unlink(tmp_img.name)
                     except Exception as e:
                         pdf.set_font('Arial', 'I', 9)
-                        pdf.cell(0, 10, "* Nota: Para visualizar el grafico aqui, instala la libreria 'kaleido' en tu entorno/servidor.", 0, 1, 'C')
+                        pdf.cell(0, 10, "* Nota: Para visualizar el grafico aqui, instala la libreria 'kaleido' en tu servidor.", 0, 1, 'C')
                 
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_final:
                     pdf.output(tmp_final.name)
