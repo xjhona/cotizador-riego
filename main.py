@@ -25,7 +25,7 @@ def limpiar_texto(texto):
     if pd.isna(texto): return ""
     return str(texto).encode('latin-1', 'replace').decode('latin-1')
 
-# --- CLASE PARA EL PDF ---
+# --- CLASE PARA EL PDF (DISEÑO ELEGANTE) ---
 class PresupuestoPDF(FPDF):
     def header(self):
         y_inicial = 10
@@ -37,7 +37,8 @@ class PresupuestoPDF(FPDF):
             margen_texto = 45 
             
         self.set_xy(margen_texto, y_inicial)
-        self.set_font('Arial', 'B', 14)
+        self.set_font('Arial', 'B', 15)
+        self.set_text_color(46, 125, 50) # Verde Rivulis
         self.cell(80, 6, 'Rivulis Peru S.A.C.', 0, 2, 'L')
         
         self.set_font('Arial', '', 9)
@@ -45,49 +46,79 @@ class PresupuestoPDF(FPDF):
         self.cell(80, 5, 'Av. Primavera Nro. 517 Int. 206', 0, 2, 'L')
         self.cell(80, 5, 'https://es.rivulis.com/', 0, 0, 'L')
         
-        self.set_xy(120, y_inicial)
-        self.set_font('Arial', 'B', 11)
+        # Bloque Cotización Superior Derecha
+        self.set_xy(140, y_inicial)
+        self.set_font('Arial', 'B', 10)
+        self.set_text_color(150, 150, 150)
+        self.cell(60, 5, 'DOCUMENTO N°', 0, 1, 'R')
+        self.set_x(140)
+        self.set_font('Arial', 'B', 13)
         self.set_text_color(0, 0, 0)
-        self.cell(80, 6, f'COTIZACION: {st.session_state.get("num_cot", "001")}', 0, 1, 'R')
-        self.ln(15) 
+        self.cell(60, 6, f'{st.session_state.get("num_cot", "001")}', 0, 1, 'R')
+        self.ln(12) 
 
     def footer(self):
         self.set_y(-15)
+        self.set_draw_color(200, 200, 200)
+        self.line(10, self.get_y(), 200, self.get_y()) # Línea separadora
         self.set_font('Arial', 'I', 8)
-        self.cell(0, 10, f'Pagina {self.page_no()}', 0, 0, 'C')
+        self.set_text_color(128, 128, 128)
+        self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
 
     def section_title(self, title):
-        self.set_font('Arial', 'B', 10)
-        self.set_fill_color(230, 230, 230)
-        self.cell(0, 8, limpiar_texto(title), 1, 1, 'L', 1)
-
-    def chapter_body(self, data):
-        self.set_font('Arial', '', 8)
+        self.ln(4)
+        self.set_font('Arial', 'B', 11)
         self.set_fill_color(46, 125, 50)
         self.set_text_color(255, 255, 255)
+        # Un título con fondo verde completo y texto blanco (muy limpio)
+        self.cell(0, 7, f"  {limpiar_texto(title).upper()}", 0, 1, 'L', 1)
+        self.ln(2)
+
+    def chapter_body(self, data):
+        # Cabecera de Tabla (Fondo gris claro, texto oscuro)
+        self.set_font('Arial', 'B', 9)
+        self.set_fill_color(235, 235, 235)
+        self.set_text_color(50, 50, 50)
+        self.set_draw_color(255, 255, 255) # Bordes blancos para separar
+        
         self.cell(10, 7, 'N°', 1, 0, 'C', 1) 
         self.cell(20, 7, 'Cod.', 1, 0, 'C', 1)
-        self.cell(90, 7, 'Descripcion', 1, 0, 'C', 1)
+        self.cell(90, 7, 'Descripcion', 1, 0, 'L', 1) # Alineado a la izquierda
         self.cell(15, 7, 'Cant.', 1, 0, 'C', 1)
-        self.cell(25, 7, 'P.Unit ($)', 1, 0, 'C', 1)
-        self.cell(30, 7, 'Total ($)', 1, 1, 'C', 1)
+        self.cell(25, 7, 'P.Unit ($)', 1, 0, 'R', 1)
+        self.cell(30, 7, 'Total ($)', 1, 1, 'R', 1)
 
+        self.set_font('Arial', '', 8)
         self.set_text_color(0, 0, 0)
         total_capitulo = 0
+        fill = False # Alternador para filas Zebra
         
         for index, row in data.iterrows():
-            desc = (row['Descripcion'][:50] + '..') if len(str(row['Descripcion'])) > 50 else str(row['Descripcion'])
+            desc = (row['Descripcion'][:60] + '..') if len(str(row['Descripcion'])) > 60 else str(row['Descripcion'])
             
-            self.cell(10, 6, str(int(row['Item'])), 1, 0, 'C')
-            self.cell(20, 6, limpiar_texto(row['Codigo']), 1)
-            self.cell(90, 6, limpiar_texto(desc), 1)
-            self.cell(15, 6, f"{row['Cantidad']:,.2f}", 1, 0, 'R')
-            self.cell(25, 6, f"{row['Precio']:,.2f}", 1, 0, 'R')
+            # Color intercalado (Zebra Striping)
+            if fill:
+                self.set_fill_color(248, 250, 248) # Un verde grisáceo hiper sutil
+            else:
+                self.set_fill_color(255, 255, 255)
+                
+            # Celdas sin borde lateral, solo fondo
+            self.cell(10, 6, str(int(row['Item'])), 0, 0, 'C', fill)
+            self.cell(20, 6, limpiar_texto(row['Codigo']), 0, 0, 'C', fill)
+            self.cell(90, 6, limpiar_texto(desc), 0, 0, 'L', fill)
+            self.cell(15, 6, f"{row['Cantidad']:,.2f}", 0, 0, 'C', fill)
+            self.cell(25, 6, f"{row['Precio']:,.2f}", 0, 0, 'R', fill)
             
             total_item = row['Cantidad'] * row['Precio']
-            self.cell(30, 6, f"{total_item:,.2f}", 1, 1, 'R')
-            total_capitulo += total_item
+            self.cell(30, 6, f"{total_item:,.2f}", 0, 1, 'R', fill)
             
+            total_capitulo += total_item
+            fill = not fill # Cambia el color para la siguiente fila
+            
+        # Línea de cierre sutil de la tabla
+        self.set_draw_color(200, 200, 200)
+        self.line(10, self.get_y(), 200, self.get_y())
+        self.ln(2)
         return total_capitulo
 
 # --- BARRA LATERAL ---
@@ -146,7 +177,6 @@ if project_file and db_file:
         with col3:
             orden = st.selectbox("🔃 Ordenar por:", ["N° de Fila (Item)", "Partida (Agrupado)", "Precio TOTAL (Mayor a Menor)", "Cantidad (Mayor a Menor)"])
 
-        # Preparar la vista
         df_view = st.session_state.df_master.copy()
         
         if busqueda:
@@ -162,7 +192,7 @@ if project_file and db_file:
 
         st.info("💡 **Cómo usar:** Haz clic en 'Add row' para agregar. Llena los datos **tranquilamente celda por celda**. Al terminar, haz clic en el botón verde de abajo para actualizar los cálculos.")
 
-        # --- TABLA EDITABLE (AHORA TOTALMENTE PASIVA PARA EVITAR SALTOS) ---
+        # --- TABLA EDITABLE ---
         edited_df = st.data_editor(
             df_view,
             column_config={
@@ -175,53 +205,59 @@ if project_file and db_file:
                 "Unidades": st.column_config.TextColumn("Und."),
                 "Codigo": st.column_config.TextColumn("Cód.", disabled=False),
             },
-            hide_index=True, # ESTO EVITA LA DOBLE NUMERACIÓN
+            hide_index=True,
             use_container_width=True,
             key="editor_principal",
             num_rows="dynamic",
             height=450
         )
 
+        # --- LÓGICA DE GUARDADO EN SEGUNDO PLANO ---
+        if not edited_df.equals(df_view):
+            
+            edited_df['Partida'] = edited_df['Partida'].fillna("NUEVO SISTEMA")
+            edited_df['Descripcion'] = edited_df['Descripcion'].fillna("")
+            edited_df['Codigo'] = edited_df['Codigo'].fillna("S.C")
+            edited_df['Unidades'] = edited_df['Unidades'].fillna("Und.")
+
+            edited_df['Cantidad'] = pd.to_numeric(edited_df['Cantidad'], errors='coerce').fillna(0)
+            edited_df['Precio'] = pd.to_numeric(edited_df['Precio'], errors='coerce').fillna(0)
+            edited_df['Total'] = edited_df['Cantidad'] * edited_df['Precio'] 
+            
+            if 'Item' in edited_df.columns:
+                edited_df['Item'] = pd.to_numeric(edited_df['Item'], errors='coerce')
+                max_item = st.session_state.df_master['Item'].max()
+                if pd.isna(max_item): max_item = 0
+                
+                mask_nan = edited_df['Item'].isna()
+                if mask_nan.any():
+                    n_missing = mask_nan.sum()
+                    edited_df.loc[mask_nan, 'Item'] = range(int(max_item) + 1, int(max_item) + 1 + n_missing)
+
+            existing_indices = edited_df.index.intersection(st.session_state.df_master.index)
+            st.session_state.df_master.loc[existing_indices] = edited_df.loc[existing_indices]
+            
+            new_indices = edited_df.index.difference(st.session_state.df_master.index)
+            if not new_indices.empty:
+                st.session_state.df_master = pd.concat([st.session_state.df_master, edited_df.loc[new_indices]])
+                
+            deleted_indices = df_view.index.difference(edited_df.index)
+            if not deleted_indices.empty:
+                st.session_state.df_master.drop(index=deleted_indices, inplace=True, errors='ignore')
+
         # --- BOTÓN DE RECALCULAR Y ACTUALIZAR ---
-        # Toda la lógica de guardado y cálculo ahora ocurre SOLO al presionar este botón.
         st.markdown("<br>", unsafe_allow_html=True)
         col_espacio, col_boton, col_espacio2 = st.columns([1, 2, 1])
         with col_boton:
             if st.button("🔄 Recalcular y Actualizar Dashboard", type="primary", use_container_width=True):
-                
-                # 1. Actualizar filas existentes
-                existing_idx = edited_df.index.intersection(st.session_state.df_master.index)
-                st.session_state.df_master.loc[existing_idx] = edited_df.loc[existing_idx]
-                
-                # 2. Añadir nuevas filas
-                new_idx = edited_df.index.difference(st.session_state.df_master.index)
-                if not new_idx.empty:
-                    st.session_state.df_master = pd.concat([st.session_state.df_master, edited_df.loc[new_idx]])
-                    
-                # 3. Eliminar filas borradas
-                deleted_idx = df_view.index.difference(edited_df.index)
-                if not deleted_idx.empty:
-                    st.session_state.df_master.drop(index=deleted_idx, inplace=True, errors='ignore')
-
-                # 4. Limpiar textos vacíos de las filas nuevas
-                st.session_state.df_master['Partida'] = st.session_state.df_master['Partida'].fillna("NUEVO SISTEMA")
-                st.session_state.df_master['Descripcion'] = st.session_state.df_master['Descripcion'].fillna("")
-                st.session_state.df_master['Codigo'] = st.session_state.df_master['Codigo'].fillna("S.C")
-                st.session_state.df_master['Unidades'] = st.session_state.df_master['Unidades'].fillna("Und.")
-
-                # 5. Calcular MATEMÁTICAS de toda la tabla
                 st.session_state.df_master['Cantidad'] = pd.to_numeric(st.session_state.df_master['Cantidad'], errors='coerce').fillna(0)
                 st.session_state.df_master['Precio'] = pd.to_numeric(st.session_state.df_master['Precio'], errors='coerce').fillna(0)
                 st.session_state.df_master['Total'] = st.session_state.df_master['Cantidad'] * st.session_state.df_master['Precio']
-
-                # 6. Reorganizar "N° de Item" para que no haya duplicados ni nulos
                 st.session_state.df_master = st.session_state.df_master.sort_values(by='Item', na_position='last').reset_index(drop=True)
                 st.session_state.df_master['Item'] = range(1, len(st.session_state.df_master) + 1)
-
-                # Refrescar la página para aplicar los cambios visuales
                 st.rerun()
 
-        # --- CÁLCULOS FINALES PARA DASHBOARD ---
+        # --- CÁLCULOS FINALES ---
         total_neto = st.session_state.df_master['Total'].sum()
         igv = total_neto * 0.18
         total_venta = total_neto + igv
@@ -249,77 +285,98 @@ if project_file and db_file:
                 pdf = PresupuestoPDF()
                 pdf.add_page()
                 
-                pdf.set_draw_color(46, 125, 50)
-                pdf.set_line_width(0.6)
-                
+                # --- DISEÑO ELEGANTE: RECUADRO DEL CLIENTE TIPO TARJETA ---
                 y_rect = pdf.get_y()
-                pdf.rect(10, y_rect, 105, 30) 
+                pdf.set_fill_color(245, 248, 245) # Gris/Verde super claro
+                pdf.rect(10, y_rect, 190, 26, 'F')
+                pdf.set_fill_color(46, 125, 50) # Acento visual a la izquierda
+                pdf.rect(10, y_rect, 2, 26, 'F')
                 
-                pdf.set_xy(12, y_rect + 2)
+                pdf.set_xy(15, y_rect + 4)
                 pdf.set_font('Arial', 'B', 9)
-                pdf.cell(100, 5, limpiar_texto(f"CLIENTE: {cliente_nombre}"), 0, 1) 
+                pdf.cell(100, 5, limpiar_texto(f"CLIENTE: {cliente_nombre}"), 0, 0) 
                 
-                pdf.set_x(12)
+                # Fecha alineada a la derecha dentro de la tarjeta
+                pdf.set_font('Arial', '', 9)
+                pdf.cell(80, 5, f"FECHA: {datetime.now().strftime('%d/%m/%Y')}", 0, 1, 'R')
+                
+                pdf.set_x(15)
+                pdf.set_font('Arial', 'B', 9)
                 pdf.cell(100, 5, limpiar_texto(f"RUC: {cliente_ruc}"), 0, 1)
                 
-                pdf.set_x(12)
+                pdf.set_x(15)
                 pdf.set_font('Arial', '', 9)
                 pdf.cell(100, 5, limpiar_texto(f"LUGAR: {cliente_lugar}"), 0, 1)
                 
-                pdf.set_x(12)
+                pdf.set_x(15)
                 pdf.cell(100, 5, limpiar_texto(f"ÁREA: {area_ha:,.2f} Hectáreas"), 0, 1)
-                
-                pdf.set_x(12)
-                pdf.cell(100, 5, f"FECHA: {datetime.now().strftime('%d/%m/%Y')}", 0, 1)
                 
                 pdf.ln(8) 
                 
-                pdf.section_title(f"RESUMEN EJECUTIVO: {cliente_nombre} - {proyecto_nombre}")
-                pdf.ln(2)
+                # --- RESUMEN EJECUTIVO ELEGANTE ---
+                pdf.section_title(f"Resumen: {proyecto_nombre}")
                 
                 resumen = st.session_state.df_master.groupby('Partida')[['Total']].sum().reset_index()
                 resumen.insert(0, 'N°', range(1, len(resumen) + 1)) 
                 
-                pdf.set_font('Arial', 'B', 10)
-                pdf.cell(10, 7, 'N°', 1, 0, 'C')
-                pdf.cell(130, 7, 'Sistema / Partida', 1)
-                pdf.cell(50, 7, 'Monto ($)', 1, 1, 'C')
+                # Cabecera Resumen
+                pdf.set_font('Arial', 'B', 9)
+                pdf.set_fill_color(235, 235, 235)
+                self_text_color = 50
+                pdf.set_text_color(50, 50, 50)
+                pdf.set_draw_color(255, 255, 255)
                 
-                pdf.set_font('Arial', '', 10)
-                for i, row in resumen.iterrows():
-                    pdf.cell(10, 6, str(row['N°']), 1, 0, 'C')
-                    pdf.cell(130, 6, limpiar_texto(row['Partida']), 1)
-                    pdf.cell(50, 6, f"$ {row['Total']:,.2f}", 1, 1, 'R')
+                pdf.cell(10, 7, 'N°', 1, 0, 'C', 1)
+                pdf.cell(130, 7, 'Sistema / Partida', 1, 0, 'L', 1)
+                pdf.cell(50, 7, 'Monto ($)', 1, 1, 'R', 1)
                 
-                pdf.set_font('Arial', 'B', 10)
-                pdf.cell(140, 7, 'TOTAL NETO (SIN IGV):', 1, 0, 'R')
-                pdf.cell(50, 7, f"$ {total_neto:,.2f}", 1, 1, 'R')
-                pdf.cell(140, 7, 'IGV (18%):', 1, 0, 'R')
-                pdf.cell(50, 7, f"$ {igv:,.2f}", 1, 1, 'R')
-                
-                pdf.set_fill_color(46, 125, 50)
-                pdf.set_text_color(255, 255, 255)
-                pdf.cell(140, 8, 'VALOR VENTA TOTAL:', 1, 0, 'R', 1)
-                pdf.cell(50, 8, f"$ {total_venta:,.2f}", 1, 1, 'R', 1)
-                
-                pdf.set_fill_color(255, 255, 255)
-                pdf.set_text_color(211, 47, 47) 
-                pdf.cell(140, 7, f'COSTO POR HECTAREA ({area_ha} Ha):', 1, 0, 'R', 1)
-                pdf.cell(50, 7, f"$ {precio_ha:,.2f}", 1, 1, 'R', 1)
-                
-                pdf.ln(10)
+                pdf.set_font('Arial', '', 9)
                 pdf.set_text_color(0, 0, 0)
+                fill_resumen = False
+                for i, row in resumen.iterrows():
+                    pdf.set_fill_color(248, 250, 248) if fill_resumen else pdf.set_fill_color(255, 255, 255)
+                    pdf.cell(10, 6, str(row['N°']), 0, 0, 'C', fill_resumen)
+                    pdf.cell(130, 6, limpiar_texto(row['Partida']), 0, 0, 'L', fill_resumen)
+                    pdf.cell(50, 6, f"$ {row['Total']:,.2f}", 0, 1, 'R', fill_resumen)
+                    fill_resumen = not fill_resumen
+                
+                # Bloque Financiero Apilado (Limpio y claro)
+                pdf.ln(5)
+                pdf.set_font('Arial', '', 10)
+                pdf.cell(140, 6, 'TOTAL NETO (SIN IGV):', 0, 0, 'R')
+                pdf.cell(50, 6, f"$ {total_neto:,.2f}", 0, 1, 'R')
+                
+                pdf.cell(140, 6, 'IGV (18%):', 0, 0, 'R')
+                pdf.cell(50, 6, f"$ {igv:,.2f}", 0, 1, 'R')
+                
+                pdf.set_font('Arial', 'B', 12)
+                pdf.set_text_color(46, 125, 50) # Verde total
+                pdf.cell(140, 8, 'VALOR VENTA TOTAL:', 0, 0, 'R')
+                pdf.cell(50, 8, f"$ {total_venta:,.2f}", 0, 1, 'R')
+                
+                pdf.set_font('Arial', 'B', 10)
+                pdf.set_text_color(211, 47, 47) # Rojo costo
+                pdf.cell(140, 6, f'COSTO POR HECTAREA ({area_ha} Ha):', 0, 0, 'R')
+                pdf.cell(50, 6, f"$ {precio_ha:,.2f}", 0, 1, 'R')
+                
+                pdf.set_text_color(0, 0, 0)
+                pdf.ln(8)
 
+                # --- DETALLES DE CADA SISTEMA ---
                 sistemas_unicos = st.session_state.df_master['Partida'].unique()
                 for sist in sistemas_unicos:
                     df_sist = st.session_state.df_master[st.session_state.df_master['Partida'] == sist]
                     if not df_sist.empty:
-                        pdf.section_title(f"DETALLE: {sist}")
+                        pdf.section_title(sist)
                         total_sis = pdf.chapter_body(df_sist)
+                        
+                        # Subtotal visualmente limpio
                         pdf.set_font('Arial', 'B', 9)
-                        pdf.cell(160, 6, 'SUBTOTAL SISTEMA:', 1, 0, 'R')
-                        pdf.cell(30, 6, f"{total_sis:,.2f}", 1, 1, 'R')
-                        pdf.ln(5)
+                        pdf.set_text_color(46, 125, 50)
+                        pdf.cell(160, 6, 'SUBTOTAL SISTEMA:', 0, 0, 'R')
+                        pdf.cell(30, 6, f"$ {total_sis:,.2f}", 0, 1, 'R')
+                        pdf.set_text_color(0, 0, 0)
+                        pdf.ln(3)
                 
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
                     pdf.output(tmp.name)
