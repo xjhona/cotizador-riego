@@ -186,27 +186,22 @@ if project_file and db_file:
         # --- LÓGICA DE ACTUALIZACIÓN (SIN PERDER EL FOCO) ---
         if not edited_df.equals(df_view):
             
-            # Detectamos si se marcó la casilla de borrar
             necesita_recargar = False
             if edited_df['❌ Eliminar'].any():
                 necesita_recargar = True
             
-            # 1. Quitar de la vista las filas marcadas para eliminar
             edited_df = edited_df[edited_df['❌ Eliminar'] == False]
             edited_df = edited_df.drop(columns=['❌ Eliminar']) 
             
-            # 2. Rellenar Textos
             edited_df['Partida'] = edited_df['Partida'].apply(lambda x: "NUEVO SISTEMA" if pd.isna(x) or x is None else str(x))
             edited_df['Descripcion'] = edited_df['Descripcion'].apply(lambda x: "" if pd.isna(x) or x is None else str(x))
             edited_df['Codigo'] = edited_df['Codigo'].apply(lambda x: "S.C" if pd.isna(x) or x is None else str(x))
             edited_df['Unidades'] = edited_df['Unidades'].apply(lambda x: "Und." if pd.isna(x) or x is None else str(x))
 
-            # 3. Calcular Totales
             edited_df['Cantidad'] = pd.to_numeric(edited_df['Cantidad'], errors='coerce').fillna(0)
             edited_df['Precio'] = pd.to_numeric(edited_df['Precio'], errors='coerce').fillna(0)
             edited_df['Total'] = edited_df['Cantidad'] * edited_df['Precio']
             
-            # 4. Asignar N° de Item a las filas nuevas
             if 'Item' in edited_df.columns:
                 edited_df['Item'] = pd.to_numeric(edited_df['Item'], errors='coerce')
                 max_item = st.session_state.df_master['Item'].max()
@@ -217,21 +212,16 @@ if project_file and db_file:
                     n_missing = mask_nan.sum()
                     edited_df.loc[mask_nan, 'Item'] = range(int(max_item) + 1, int(max_item) + 1 + n_missing)
 
-            # Actualizamos las filas existentes de manera silenciosa
             st.session_state.df_master.update(edited_df)
             
-            # Anexamos las filas recién creadas
             nuevas_filas = edited_df[~edited_df.index.isin(st.session_state.df_master.index)]
             if not nuevas_filas.empty:
                 st.session_state.df_master = pd.concat([st.session_state.df_master, nuevas_filas])
                 
-            # Eliminamos definitivamente las que se marcaron con ❌
             filas_borradas = df_view[~df_view.index.isin(edited_df.index)]
             if not filas_borradas.empty:
                 st.session_state.df_master = st.session_state.df_master.drop(index=filas_borradas.index, errors='ignore')
 
-            # SOLO recargamos agresivamente la app si alguien borró una fila.
-            # Para la edición de textos/números, el cursor se mantendrá perfecto.
             if necesita_recargar:
                 st.session_state.df_master = st.session_state.df_master.sort_values(by='Item').reset_index(drop=True)
                 st.rerun()
@@ -327,4 +317,57 @@ if project_file and db_file:
 
                 sistemas_unicos = st.session_state.df_master['Partida'].unique()
                 for sist in sistemas_unicos:
-                    df_sist = st.session_state.df_master[st.session_state.df_master['Partida'] ==
+                    df_sist = st.session_state.df_master[st.session_state.df_master['Partida'] == sist]
+                    if not df_sist.empty:
+                        pdf.section_title(f"DETALLE: {sist}")
+                        total_sis = pdf.chapter_body(df_sist)
+                        pdf.set_font('Arial', 'B', 9)
+                        pdf.cell(160, 6, 'SUBTOTAL SISTEMA:', 1, 0, 'R')
+                        pdf.cell(30, 6, f"{total_sis:,.2f}", 1, 1, 'R')
+                        pdf.ln(5)
+                
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                    pdf.output(tmp.name)
+                    with open(tmp.name, "rb") as f:
+                        return f.read()
+
+            st.download_button(
+                label="📄 Descargar Presupuesto (PDF)",
+                data=generar_pdf_bytes(),
+                file_name=f"Presupuesto_{cotizacion_num}.pdf",
+                mime="application/pdf",
+                type="primary"
+            )
+
+        with c_der:
+            with st.container(border=True):
+                resumen_grafico = st.session_state.df_master.groupby('Partida')[['Total']].sum().reset_index()
+                fig = px.pie(
+                    resumen_grafico, 
+                    values='Total', 
+                    names='Partida', 
+                    hole=0.45, 
+                    title="Distribución de Costos por Sistema"
+                )
+                
+                fig.update_traces(
+                    textposition='outside',
+                    textinfo='percent+label',
+                    textfont=dict(size=14, color='black') 
+                )
+                
+                fig.update_layout(
+                    legend=dict(
+                        font=dict(size=16), 
+                        orientation="h",
+                        yanchor="bottom", y=-0.5 
+                    ),
+                    margin=dict(t=40, b=40, l=40, r=40)
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        st.error(f"⚠️ Error: {e}")
+        st.write("Presiona F5 para refrescar la página.")
+else:
+    st.info("👋 Sube tus archivos para comenzar.")
