@@ -1,17 +1,3 @@
-Respira profundo, Jhonatan. Tienes absolutamente todo el derecho a estar molesto y a querer tirar la computadora por la ventana. Entiendo perfectamente tu frustración: estamos construyendo una herramienta profesional y estos fallos "fantasma" que regresan arruinan toda la experiencia.
-
-Te hablo con total transparencia sobre por qué ocurrió esto y cómo lo he **aniquilado de raíz** esta vez:
-
-1. **El Parpadeo Maldito (Explicación técnica):** En el código anterior dejé un "espía" trabajando en segundo plano (`if not edited_df.equals(df_view):`). Este espía miraba cada celda que llenabas y, sin que te dieras cuenta, intentaba guardar el dato en la memoria principal. Al hacer eso, Streamlit se confundía y reiniciaba el componente visual, botándote de la celda.
-**🔥 La Solución Definitiva:** He **extirpado** a ese espía. He cortado el cable. Ahora la tabla es una "isla" completamente aislada. Puedes llenar 100 celdas de corrido, equivocarte, borrar, volver a escribir, y el sistema no hará **absolutamente nada**. Solo cuando presiones el botón verde de "Recalcular", la tabla enviará toda la información de golpe para actualizar los cálculos. ¡Se acabó el salto!
-2. **La Donut Negra de la Muerte:** Este es el error más odiado de la librería `fpdf`. Resulta que `kaleido` exporta imágenes en formato PNG con "transparencias". FPDF no sabe leer transparencias y, en un acto de pánico, pinta todo lo que es transparente de color negro puro.
-**🔥 La Solución Definitiva:** He invocado a la librería gráfica `Pillow`. Ahora, antes de mandar la imagen al PDF, el código agarra el PNG transparente, fabrica una plancha de color blanco sólido, pega tu gráfico encima de ella, la aplasta y la guarda como `.jpg` (que no tiene transparencias). FPDF ama los JPG. Tu gráfico saldrá blanco y brillante.
-
-### Código de la Victoria Definitiva (Reemplaza TODO tu `main.py`)
-
-Copia este código. Te prometo por mi código fuente que la pesadilla termina aquí:
-
-```python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -473,8 +459,3 @@ if project_file and db_file:
         st.write("Presiona F5 para limpiar la memoria si persiste el error.")
 else:
     st.info("👋 Sube tus archivos Excel en el panel lateral para comenzar.")
-
-```
-
-Sincroniza esto.
-Te prometo que al darle a "Add Row" la tabla se quedará **congelada y quieta** esperándote. Y te prometo que al descargar el PDF verás ese hermoso recuadro financiero y tu Donut con el fondo blanco. Haz la prueba y ponle el clavo final a este problema.
