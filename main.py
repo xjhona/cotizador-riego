@@ -5,7 +5,9 @@ from fpdf import FPDF
 from datetime import datetime
 import tempfile
 import os
-from PIL import Image
+import matplotlib
+matplotlib.use('Agg') # Modo servidor (Garantiza que funcione en la nube sin errores)
+import matplotlib.pyplot as plt
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Cotizador AgroCost Pro", layout="wide", page_icon="🌱")
@@ -191,9 +193,9 @@ if project_file and db_file:
         elif orden == "Partida (Agrupado)": df_view = df_view.sort_values(by=['Partida', 'Descripcion'])
         else: df_view = df_view.sort_values(by='Item', ascending=True)
 
-        st.info("💡 **Sin parpadeos:** Haz clic en 'Add row'. Llena los datos como en Excel (usa TAB). La tabla NO saltará. Cuando termines toda la fila, presiona el botón de abajo.")
+        st.info("💡 **Sin parpadeos:** Haz clic en 'Add row'. Escribe tranquilamente todos tus datos (la tabla no saltará). Al terminar, presiona el botón verde de abajo.")
 
-        # --- TABLA EDITABLE (LA ISLA AISLADA) ---
+        # --- TABLA EDITABLE ---
         edited_df = st.data_editor(
             df_view,
             column_config={
@@ -213,42 +215,36 @@ if project_file and db_file:
             height=450
         )
 
-        # --- BOTÓN MÁGICO (ÚNICO LUGAR DONDE SE ACTUALIZAN LOS DATOS) ---
+        # --- BOTÓN DE RECALCULAR Y ACTUALIZAR (LÓGICA COMPLETAMENTE AISLADA) ---
         st.markdown("<br>", unsafe_allow_html=True)
         col_espacio, col_boton, col_espacio2 = st.columns([1, 2, 1])
         with col_boton:
             if st.button("🔄 Recalcular y Actualizar Dashboard", type="primary", use_container_width=True):
                 
-                # 1. Identificar filas eliminadas por el usuario y quitarlas del Master
                 deleted_indices = df_view.index.difference(edited_df.index)
                 if not deleted_indices.empty:
                     st.session_state.df_master.drop(index=deleted_indices, inplace=True, errors='ignore')
 
-                # 2. Actualizar las filas que ya existían
                 existing_indices = edited_df.index.intersection(st.session_state.df_master.index)
                 st.session_state.df_master.loc[existing_indices] = edited_df.loc[existing_indices]
                 
-                # 3. Añadir las filas completamente nuevas
                 new_indices = edited_df.index.difference(st.session_state.df_master.index)
                 if not new_indices.empty:
                     st.session_state.df_master = pd.concat([st.session_state.df_master, edited_df.loc[new_indices]])
                 
-                # 4. Limpieza de datos
                 st.session_state.df_master['Partida'] = st.session_state.df_master['Partida'].fillna("NUEVO SISTEMA")
                 st.session_state.df_master['Descripcion'] = st.session_state.df_master['Descripcion'].fillna("")
                 st.session_state.df_master['Codigo'] = st.session_state.df_master['Codigo'].fillna("S.C")
                 st.session_state.df_master['Unidades'] = st.session_state.df_master['Unidades'].fillna("Und.")
                 
-                # 5. La Matemática
                 st.session_state.df_master['Cantidad'] = pd.to_numeric(st.session_state.df_master['Cantidad'], errors='coerce').fillna(0)
                 st.session_state.df_master['Precio'] = pd.to_numeric(st.session_state.df_master['Precio'], errors='coerce').fillna(0)
                 st.session_state.df_master['Total'] = st.session_state.df_master['Cantidad'] * st.session_state.df_master['Precio']
                 
-                # 6. Reordenar índice general
                 st.session_state.df_master = st.session_state.df_master.sort_values(by='Item', na_position='last').reset_index(drop=True)
                 st.session_state.df_master['Item'] = range(1, len(st.session_state.df_master) + 1)
                 
-                st.rerun() # Único reinicio permitido de toda la app.
+                st.rerun() 
 
         # --- CÁLCULOS FINALES ---
         total_neto = st.session_state.df_master['Total'].sum()
@@ -261,14 +257,15 @@ if project_file and db_file:
 
         c_izq, c_der = st.columns([1, 1.2])
 
+        # GRAFICO INTERACTIVO PARA LA WEB (CON PLOTLY)
         resumen_grafico = st.session_state.df_master.groupby('Partida')[['Total']].sum().reset_index()
-        fig_donut = None
+        fig_donut_web = None
         if resumen_grafico['Total'].sum() > 0:
-            fig_donut = px.pie(
+            fig_donut_web = px.pie(
                 resumen_grafico, values='Total', names='Partida', hole=0.45, title="Distribución de Costos por Sistema"
             )
-            fig_donut.update_traces(textposition='outside', textinfo='percent+label', textfont=dict(size=14, color='black'))
-            fig_donut.update_layout(legend=dict(font=dict(size=16), orientation="h", yanchor="bottom", y=-0.5), margin=dict(t=40, b=40, l=40, r=40))
+            fig_donut_web.update_traces(textposition='outside', textinfo='percent+label', textfont=dict(size=14, color='black'))
+            fig_donut_web.update_layout(legend=dict(font=dict(size=16), orientation="h", yanchor="bottom", y=-0.5), margin=dict(t=40, b=40, l=40, r=40))
 
         with c_izq:
             st.markdown(f"""
@@ -287,6 +284,7 @@ if project_file and db_file:
                 pdf = PresupuestoPDF()
                 pdf.add_page()
                 
+                # --- TARJETA DE ENCABEZADO ---
                 y_rect = pdf.get_y()
                 pdf.set_fill_color(245, 248, 245) 
                 pdf.rect(10, y_rect, 190, 26, 'F')
@@ -396,43 +394,37 @@ if project_file and db_file:
                 pdf.section_title("Resumen Financiero y Distribucion")
                 dibujar_resumen_y_totales(pdf)
                 
-                # --- SOLUCIÓN NUCLEAR PARA LA DONUT NEGRA (PILLOW) ---
-                if fig_donut:
+                # --- SOLUCIÓN DE INGENIERÍA: GRAFICO DONUT CON MATPLOTLIB (VECTORIAL A JPG) ---
+                if not resumen_grafico.empty and resumen_grafico['Total'].sum() > 0:
                     try:
-                        fig_pdf = px.pie(resumen_grafico, values='Total', names='Partida', hole=0.45)
-                        fig_pdf.update_traces(textposition='outside', textinfo='percent+label', textfont=dict(size=14, color='black'))
-                        # Forzar blanco absoluto
-                        fig_pdf.update_layout(
-                            showlegend=False, 
-                            margin=dict(t=30, b=30, l=150, r=150), 
-                            paper_bgcolor='rgba(255,255,255,1)',
-                            plot_bgcolor='rgba(255,255,255,1)'
+                        fig_mat, ax = plt.subplots(figsize=(10, 5))
+                        colores = plt.cm.Set2.colors
+                        
+                        wedges, texts, autotexts = ax.pie(
+                            resumen_grafico['Total'], 
+                            labels=[limpiar_texto(x) for x in resumen_grafico['Partida']],
+                            autopct='%1.1f%%', 
+                            startangle=140,
+                            colors=colores,
+                            wedgeprops=dict(width=0.45, edgecolor='white', linewidth=2),
+                            textprops=dict(color="black", fontsize=10, weight="bold")
                         )
+                        ax.set_title("Distribucion de Costos por Sistema", fontsize=14, weight='bold')
                         
-                        # Paso 1: Guardar como PNG
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_png:
-                            fig_pdf.write_image(tmp_png.name, width=900, height=450)
-                            
-                        # Paso 2: Usar Pillow para asesinar cualquier pixel transparente y volverlo blanco
+                        # Garantizamos el blanco puro del lienzo de Matplotlib
+                        fig_mat.patch.set_facecolor('white')
+                        
                         with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_jpg:
-                            img = Image.open(tmp_png.name)
-                            fondo_blanco = Image.new("RGB", img.size, (255, 255, 255))
-                            # Pegar usando el canal alpha como máscara si existe
-                            if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
-                                fondo_blanco.paste(img, (0, 0), img)
-                            else:
-                                fondo_blanco.paste(img, (0, 0))
-                                
-                            fondo_blanco.save(tmp_jpg.name, "JPEG", quality=100)
+                            # Matplotlib exporta un JPG RGB estricto, sin canales de transparencia que asusten a FPDF
+                            plt.savefig(tmp_jpg.name, format='jpg', bbox_inches='tight', facecolor='white', dpi=300)
+                            plt.close(fig_mat) 
                             
-                        # Insertar el JPG seguro en el PDF
                         pdf.image(tmp_jpg.name, x=15, y=pdf.get_y(), w=180)
-                        
-                        os.unlink(tmp_png.name)
                         os.unlink(tmp_jpg.name)
+                        
                     except Exception as e:
                         pdf.set_font('Arial', 'I', 9)
-                        pdf.cell(0, 10, f"* Nota: No se pudo generar la imagen del grafico ({e}).", 0, 1, 'C')
+                        pdf.cell(0, 10, f"* Nota: No se pudo generar el grafico ({e}).", 0, 1, 'C')
                 
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_final:
                     pdf.output(tmp_final.name)
@@ -449,8 +441,8 @@ if project_file and db_file:
 
         with c_der:
             with st.container(border=True):
-                if fig_donut:
-                    st.plotly_chart(fig_donut, use_container_width=True)
+                if fig_donut_web:
+                    st.plotly_chart(fig_donut_web, use_container_width=True)
                 else:
                     st.info("Aún no hay costos asignados para generar el gráfico.")
 
