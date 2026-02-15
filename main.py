@@ -5,6 +5,7 @@ from fpdf import FPDF
 from datetime import datetime
 import tempfile
 import os
+from PIL import Image # NUEVA ARMA CONTRA EL FONDO NEGRO
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Cotizador AgroCost Pro", layout="wide", page_icon="🌱")
@@ -93,7 +94,11 @@ class PresupuestoPDF(FPDF):
         for index, row in data.iterrows():
             desc = (row['Descripcion'][:60] + '..') if len(str(row['Descripcion'])) > 60 else str(row['Descripcion'])
             
-            self.set_fill_color(248, 250, 248) if fill else self.set_fill_color(255, 255, 255)
+            # SOLUCIÓN COLUMNA "NONE": Bloque condicional limpio
+            if fill:
+                self.set_fill_color(248, 250, 248)
+            else:
+                self.set_fill_color(255, 255, 255)
                 
             self.cell(10, 6, str(int(row['Item'])), 0, 0, 'C', fill)
             self.cell(20, 6, limpiar_texto(row['Codigo']), 0, 0, 'C', fill)
@@ -187,7 +192,7 @@ if project_file and db_file:
         elif orden == "Partida (Agrupado)": df_view = df_view.sort_values(by=['Partida', 'Descripcion'])
         else: df_view = df_view.sort_values(by='Item', ascending=True)
 
-        st.info("💡 **Cómo usar:** Haz clic en 'Add row'. Escribe tranquilamente todos tus datos (la tabla no saltará). Al terminar, presiona el botón verde de abajo.")
+        st.info("💡 **Cómo usar:** Haz clic en 'Add row'. Escribe tranquilamente todos tus datos. Al terminar, presiona el botón verde de abajo.")
 
         # --- TABLA EDITABLE ---
         edited_df = st.data_editor(
@@ -265,7 +270,7 @@ if project_file and db_file:
 
         c_izq, c_der = st.columns([1, 1.2])
 
-        # Creamos la figura Donut
+        # Creamos la figura Donut para el Dashboard
         resumen_grafico = st.session_state.df_master.groupby('Partida')[['Total']].sum().reset_index()
         fig_donut = None
         if resumen_grafico['Total'].sum() > 0:
@@ -328,14 +333,11 @@ if project_file and db_file:
                 
                 pdf.ln(6) 
                 
-                # Preparamos los datos del resumen
                 resumen = st.session_state.df_master.groupby('Partida')[['Total']].sum().reset_index()
                 resumen.insert(0, 'N°', range(1, len(resumen) + 1)) 
                 
-                # --- FUNCIÓN INTERNA PARA DIBUJAR LA TABLA DE RESUMEN Y TOTALES ---
-                # Al encapsularlo aquí, garantizamos que imprima exactamente lo mismo en ambas hojas.
+                # --- FUNCION PARA DIBUJAR RESUMEN EXACTO DOS VECES ---
                 def dibujar_resumen_y_totales(pdf_obj):
-                    # Cabecera de la tabla
                     pdf_obj.set_font('Arial', 'B', 9)
                     pdf_obj.set_fill_color(235, 235, 235)
                     pdf_obj.set_text_color(50, 50, 50)
@@ -345,18 +347,21 @@ if project_file and db_file:
                     pdf_obj.cell(130, 7, 'Sistema / Partida', 1, 0, 'L', 1)
                     pdf_obj.cell(50, 7, 'Monto ($)', 1, 1, 'R', 1)
                     
-                    # Filas de la tabla (Sistemas)
                     pdf_obj.set_font('Arial', '', 9)
                     pdf_obj.set_text_color(0, 0, 0)
                     fill_resumen = False
                     for i, row in resumen.iterrows():
-                        pdf_obj.set_fill_color(248, 250, 248) if fill_resumen else pdf_obj.set_fill_color(255, 255, 255)
+                        # SOLUCIÓN COLUMNA "NONE" EN RESUMEN
+                        if fill_resumen:
+                            pdf_obj.set_fill_color(248, 250, 248)
+                        else:
+                            pdf_obj.set_fill_color(255, 255, 255)
+                            
                         pdf_obj.cell(10, 6, str(row['N°']), 0, 0, 'C', fill_resumen)
                         pdf_obj.cell(130, 6, limpiar_texto(row['Partida']), 0, 0, 'L', fill_resumen)
                         pdf_obj.cell(50, 6, f"$ {row['Total']:,.2f}", 0, 1, 'R', fill_resumen)
                         fill_resumen = not fill_resumen
                     
-                    # Bloque Financiero (Totales de Venta, IGV, etc.)
                     pdf_obj.ln(5)
                     pdf_obj.set_font('Arial', '', 11)
                     pdf_obj.cell(140, 7, 'TOTAL NETO (SIN IGV):', 0, 0, 'R')
@@ -378,11 +383,11 @@ if project_file and db_file:
                     pdf_obj.set_text_color(0, 0, 0)
                     pdf_obj.ln(8)
 
-                # --- 1. DIBUJAR RESUMEN EN LA HOJA 1 ---
+                # --- HOJA 1 ---
                 pdf.section_title(f"Resumen: {proyecto_nombre}")
                 dibujar_resumen_y_totales(pdf)
 
-                # --- 2. DETALLES DE CADA SISTEMA ---
+                # --- HOJAS DE DETALLES ---
                 sistemas_unicos = st.session_state.df_master['Partida'].unique()
                 for sist in sistemas_unicos:
                     df_sist = st.session_state.df_master[st.session_state.df_master['Partida'] == sist].copy()
@@ -399,30 +404,42 @@ if project_file and db_file:
                         pdf.set_text_color(0, 0, 0)
                         pdf.ln(3)
 
-                # --- 3. DIBUJAR RESUMEN EN LA ÚLTIMA HOJA CON LA DONUT ---
+                # --- ÚLTIMA HOJA ---
                 pdf.add_page() 
                 pdf.section_title("Resumen Financiero y Distribucion")
                 dibujar_resumen_y_totales(pdf)
                 
-                # Insertar Gráfico Donut (Solución para FPDF: Guardar como JPG sin transparencias)
+                # --- GRAFICO DONUT (LA SOLUCIÓN BLANCA DEFINITIVA) ---
                 if fig_donut:
                     try:
                         fig_pdf = px.pie(resumen_grafico, values='Total', names='Partida', hole=0.45)
-                        fig_pdf.update_traces(textposition='outside', textinfo='percent+label', textfont=dict(size=18, color='black'))
-                        # Obligamos al fondo a ser completamente blanco, nada de "transparentes"
+                        # Aumento los márgenes (l=150, r=150) para que "SISTEMA DE VALVULAS" no se corte
+                        fig_pdf.update_traces(textposition='outside', textinfo='percent+label', textfont=dict(size=14, color='black'))
                         fig_pdf.update_layout(
                             showlegend=False, 
-                            margin=dict(t=10, b=10, l=10, r=10),
+                            margin=dict(t=30, b=30, l=150, r=150), 
                             paper_bgcolor='white',
                             plot_bgcolor='white'
                         )
                         
-                        # Usamos .jpg porque fpdf maneja los jpg perfecto, los png con canal alpha fallan (se ven negros)
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_img:
-                            fig_pdf.write_image(tmp_img.name, width=800, height=500, format='jpg')
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_png:
+                            fig_pdf.write_image(tmp_png.name, width=900, height=450)
+                            
+                        # Usar PIL para forzar un lienzo blanco impenetrable y guardarlo como JPG
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_jpg:
+                            imagen = Image.open(tmp_png.name)
+                            fondo_blanco = Image.new("RGB", imagen.size, (255, 255, 255))
+                            # Pegar respetando la transparencia si la hay
+                            if len(imagen.split()) == 4:
+                                fondo_blanco.paste(imagen, mask=imagen.split()[3])
+                            else:
+                                fondo_blanco.paste(imagen)
+                            fondo_blanco.save(tmp_jpg.name, "JPEG", quality=100)
+                            
+                        pdf.image(tmp_jpg.name, x=15, y=pdf.get_y(), w=180)
                         
-                        pdf.image(tmp_img.name, x=25, y=pdf.get_y(), w=160)
-                        os.unlink(tmp_img.name)
+                        os.unlink(tmp_png.name)
+                        os.unlink(tmp_jpg.name)
                     except Exception as e:
                         pdf.set_font('Arial', 'I', 9)
                         pdf.cell(0, 10, f"* Nota: No se pudo generar la imagen del grafico ({e}).", 0, 1, 'C')
