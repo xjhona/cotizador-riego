@@ -132,8 +132,9 @@ if project_file and db_file:
             df_final['Precio'] = df_final['Precio'].fillna(0.0)
             df_final['Total'] = df_final['Cantidad'] * df_final['Precio']
             
+            df_final = df_final.sort_values(by=['Partida', 'Descripcion']).reset_index(drop=True)
             df_final.insert(0, 'Item', range(1, len(df_final) + 1))
-            st.session_state.df_master = df_final.reset_index(drop=True)
+            st.session_state.df_master = df_final
 
         # --- FILTROS ---
         st.header("📝 Editor de Cotización")
@@ -145,6 +146,7 @@ if project_file and db_file:
         with col3:
             orden = st.selectbox("🔃 Ordenar por:", ["N° de Fila (Item)", "Partida (Agrupado)", "Precio TOTAL (Mayor a Menor)", "Cantidad (Mayor a Menor)"])
 
+        # Preparar la vista
         df_view = st.session_state.df_master.copy()
         
         if busqueda:
@@ -158,9 +160,9 @@ if project_file and db_file:
         elif orden == "Partida (Agrupado)": df_view = df_view.sort_values(by=['Partida', 'Descripcion'])
         else: df_view = df_view.sort_values(by='Item', ascending=True)
 
-        st.info("💡 **Cómo usar:** Haz clic en 'Add row' para agregar. Llena los datos tranquilamente. Cuando termines, dale al botón verde de abajo para actualizar los cálculos y gráficos.")
+        st.info("💡 **Cómo usar:** Haz clic en 'Add row' para agregar. Llena los datos **tranquilamente celda por celda**. Al terminar, haz clic en el botón verde de abajo para actualizar los cálculos.")
 
-        # --- TABLA EDITABLE ---
+        # --- TABLA EDITABLE (AHORA TOTALMENTE PASIVA PARA EVITAR SALTOS) ---
         edited_df = st.data_editor(
             df_view,
             column_config={
@@ -173,57 +175,53 @@ if project_file and db_file:
                 "Unidades": st.column_config.TextColumn("Und."),
                 "Codigo": st.column_config.TextColumn("Cód.", disabled=False),
             },
-            hide_index=True, # CORRECCIÓN: Oculta la doble numeración visual
+            hide_index=True, # ESTO EVITA LA DOBLE NUMERACIÓN
             use_container_width=True,
             key="editor_principal",
             num_rows="dynamic",
             height=450
         )
 
-        # --- LÓGICA DE GUARDADO EN SEGUNDO PLANO ---
-        if not edited_df.equals(df_view):
-            
-            # Limpieza y cálculos automáticos internos
-            edited_df['Partida'] = edited_df['Partida'].fillna("NUEVO SISTEMA")
-            edited_df['Descripcion'] = edited_df['Descripcion'].fillna("")
-            edited_df['Codigo'] = edited_df['Codigo'].fillna("S.C")
-            edited_df['Unidades'] = edited_df['Unidades'].fillna("Und.")
-
-            edited_df['Cantidad'] = pd.to_numeric(edited_df['Cantidad'], errors='coerce').fillna(0)
-            edited_df['Precio'] = pd.to_numeric(edited_df['Precio'], errors='coerce').fillna(0)
-            edited_df['Total'] = edited_df['Cantidad'] * edited_df['Precio'] # Multiplicación
-            
-            if 'Item' in edited_df.columns:
-                edited_df['Item'] = pd.to_numeric(edited_df['Item'], errors='coerce')
-                max_item = st.session_state.df_master['Item'].max()
-                if pd.isna(max_item): max_item = 0
-                
-                mask_nan = edited_df['Item'].isna()
-                if mask_nan.any():
-                    n_missing = mask_nan.sum()
-                    edited_df.loc[mask_nan, 'Item'] = range(int(max_item) + 1, int(max_item) + 1 + n_missing)
-
-            # Sincronización segura con los datos maestros
-            existing_indices = edited_df.index.intersection(st.session_state.df_master.index)
-            st.session_state.df_master.loc[existing_indices] = edited_df.loc[existing_indices]
-            
-            new_indices = edited_df.index.difference(st.session_state.df_master.index)
-            if not new_indices.empty:
-                st.session_state.df_master = pd.concat([st.session_state.df_master, edited_df.loc[new_indices]])
-                
-            deleted_indices = df_view.index.difference(edited_df.index)
-            if not deleted_indices.empty:
-                st.session_state.df_master.drop(index=deleted_indices, inplace=True)
-
-        # --- NUEVO BOTÓN DE ACTUALIZACIÓN ---
+        # --- BOTÓN DE RECALCULAR Y ACTUALIZAR ---
+        # Toda la lógica de guardado y cálculo ahora ocurre SOLO al presionar este botón.
         st.markdown("<br>", unsafe_allow_html=True)
         col_espacio, col_boton, col_espacio2 = st.columns([1, 2, 1])
         with col_boton:
             if st.button("🔄 Recalcular y Actualizar Dashboard", type="primary", use_container_width=True):
-                st.session_state.df_master = st.session_state.df_master.sort_values(by='Item').reset_index(drop=True)
+                
+                # 1. Actualizar filas existentes
+                existing_idx = edited_df.index.intersection(st.session_state.df_master.index)
+                st.session_state.df_master.loc[existing_idx] = edited_df.loc[existing_idx]
+                
+                # 2. Añadir nuevas filas
+                new_idx = edited_df.index.difference(st.session_state.df_master.index)
+                if not new_idx.empty:
+                    st.session_state.df_master = pd.concat([st.session_state.df_master, edited_df.loc[new_idx]])
+                    
+                # 3. Eliminar filas borradas
+                deleted_idx = df_view.index.difference(edited_df.index)
+                if not deleted_idx.empty:
+                    st.session_state.df_master.drop(index=deleted_idx, inplace=True, errors='ignore')
+
+                # 4. Limpiar textos vacíos de las filas nuevas
+                st.session_state.df_master['Partida'] = st.session_state.df_master['Partida'].fillna("NUEVO SISTEMA")
+                st.session_state.df_master['Descripcion'] = st.session_state.df_master['Descripcion'].fillna("")
+                st.session_state.df_master['Codigo'] = st.session_state.df_master['Codigo'].fillna("S.C")
+                st.session_state.df_master['Unidades'] = st.session_state.df_master['Unidades'].fillna("Und.")
+
+                # 5. Calcular MATEMÁTICAS de toda la tabla
+                st.session_state.df_master['Cantidad'] = pd.to_numeric(st.session_state.df_master['Cantidad'], errors='coerce').fillna(0)
+                st.session_state.df_master['Precio'] = pd.to_numeric(st.session_state.df_master['Precio'], errors='coerce').fillna(0)
+                st.session_state.df_master['Total'] = st.session_state.df_master['Cantidad'] * st.session_state.df_master['Precio']
+
+                # 6. Reorganizar "N° de Item" para que no haya duplicados ni nulos
+                st.session_state.df_master = st.session_state.df_master.sort_values(by='Item', na_position='last').reset_index(drop=True)
+                st.session_state.df_master['Item'] = range(1, len(st.session_state.df_master) + 1)
+
+                # Refrescar la página para aplicar los cambios visuales
                 st.rerun()
 
-        # --- CÁLCULOS FINALES (Se actualizan al presionar el botón) ---
+        # --- CÁLCULOS FINALES PARA DASHBOARD ---
         total_neto = st.session_state.df_master['Total'].sum()
         igv = total_neto * 0.18
         total_venta = total_neto + igv
@@ -319,7 +317,7 @@ if project_file and db_file:
                         pdf.section_title(f"DETALLE: {sist}")
                         total_sis = pdf.chapter_body(df_sist)
                         pdf.set_font('Arial', 'B', 9)
-                        pdf.cell(160, 6, 'SUB बुन्देल SUBTOTAL SISTEMA:', 1, 0, 'R')
+                        pdf.cell(160, 6, 'SUBTOTAL SISTEMA:', 1, 0, 'R')
                         pdf.cell(30, 6, f"{total_sis:,.2f}", 1, 1, 'R')
                         pdf.ln(5)
                 
@@ -339,7 +337,6 @@ if project_file and db_file:
         with c_der:
             with st.container(border=True):
                 resumen_grafico = st.session_state.df_master.groupby('Partida')[['Total']].sum().reset_index()
-                # Evitar graficar si todo es cero
                 if resumen_grafico['Total'].sum() > 0:
                     fig = px.pie(
                         resumen_grafico, 
