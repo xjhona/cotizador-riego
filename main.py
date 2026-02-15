@@ -336,6 +336,10 @@ if project_file and db_file:
                 # --- RESUMEN EJECUTIVO (INICIO) ---
                 pdf.section_title(f"Resumen: {proyecto_nombre}")
                 
+                # ¡AQUÍ ESTÁ LA CORRECCIÓN CLAVE! 
+                resumen = st.session_state.df_master.groupby('Partida')[['Total']].sum().reset_index()
+                resumen.insert(0, 'N°', range(1, len(resumen) + 1)) 
+                
                 # Cabecera Resumen
                 pdf.set_font('Arial', 'B', 9)
                 pdf.set_fill_color(235, 235, 235)
@@ -363,7 +367,6 @@ if project_file and db_file:
                 for sist in sistemas_unicos:
                     df_sist = st.session_state.df_master[st.session_state.df_master['Partida'] == sist].copy()
                     if not df_sist.empty:
-                        # ORDENAMIENTO: Mayor a menor precio total dentro del PDF
                         df_sist = df_sist.sort_values(by='Total', ascending=False)
                         
                         pdf.section_title(sist)
@@ -377,9 +380,9 @@ if project_file and db_file:
                         pdf.ln(3)
 
                 # --- SECCIÓN FINAL: REPETIR RESUMEN FINANCIERO Y MOSTRAR DONUT ---
-                pdf.add_page() # Lo mandamos a una página final limpia
+                pdf.add_page() 
                 
-                pdf.section_title("Resumen Financiero y Distribución")
+                pdf.section_title("Resumen Financiero y Distribucion")
                 
                 # Bloque Financiero Final
                 pdf.set_font('Arial', '', 11)
@@ -402,10 +405,9 @@ if project_file and db_file:
                 pdf.set_text_color(0, 0, 0)
                 pdf.ln(10)
                 
-                # Insertar Gráfico Donut (Requiere 'kaleido')
+                # Insertar Gráfico Donut
                 if fig_donut:
                     try:
-                        # Creamos una versión del gráfico optimizada para impresión (sin leyendas sueltas)
                         fig_pdf = px.pie(resumen_grafico, values='Total', names='Partida', hole=0.45)
                         fig_pdf.update_traces(textposition='outside', textinfo='percent+label', textfont=dict(size=18, color='black'))
                         fig_pdf.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10))
@@ -413,12 +415,11 @@ if project_file and db_file:
                         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
                             fig_pdf.write_image(tmp_img.name, width=800, height=500)
                         
-                        # Pegar la imagen en el PDF y centrarla
                         pdf.image(tmp_img.name, x=25, y=pdf.get_y(), w=160)
                         os.unlink(tmp_img.name)
                     except Exception as e:
                         pdf.set_font('Arial', 'I', 9)
-                        pdf.cell(0, 10, "* Nota: Para visualizar el grafico aqui, instala la libreria 'kaleido' en el servidor.", 0, 1, 'C')
+                        pdf.cell(0, 10, "* Nota: Para visualizar el grafico aqui, instala la libreria 'kaleido' en tu entorno/servidor.", 0, 1, 'C')
                 
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_final:
                     pdf.output(tmp_final.name)
