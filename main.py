@@ -9,6 +9,7 @@ import io
 import matplotlib
 matplotlib.use('Agg') # Modo servidor para evitar errores de pantalla
 import matplotlib.pyplot as plt
+from PIL import Image # Necesario para procesar la imagen del gráfico
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Cotizador AgroCost Pro", layout="wide", page_icon="🌱")
@@ -330,11 +331,10 @@ if project_file and db_file:
                 pdf.ln(6) 
                 
                 # --- CALCULAR RESUMEN PARA EL PDF ---
-                # AQUI ESTABA EL ERROR: Definimos 'resumen' ANTES de usarlo en cualquier función
                 resumen = st.session_state.df_master.groupby('Partida')[['Total']].sum().reset_index()
                 resumen.insert(0, 'N°', range(1, len(resumen) + 1)) 
                 
-                # Función auxiliar para dibujar tabla + totales (para no repetir código)
+                # Función auxiliar para dibujar tabla + totales
                 def dibujar_resumen_y_totales(pdf_obj):
                     pdf_obj.set_font('Arial', 'B', 9)
                     pdf_obj.set_fill_color(235, 235, 235)
@@ -480,4 +480,3 @@ if project_file and db_file:
         st.write("Presiona F5 para limpiar la memoria si persiste el error.")
 else:
     st.info("👋 Sube tus archivos Excel en el panel lateral para comenzar.")
-```
