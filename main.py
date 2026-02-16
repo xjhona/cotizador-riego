@@ -481,6 +481,3 @@ if project_file and db_file:
 else:
     st.info("👋 Sube tus archivos Excel en el panel lateral para comenzar.")
 ```
-
-Sincroniza y recarga.
-Ahora sí, verás que el PDF tiene el resumen completo en la primera y última hoja, y la Donut hecha con Matplotlib (fondo blanco) centrada y hermosa al final. ¡Quedo atento a tu confirmación de victoria! 🚀
