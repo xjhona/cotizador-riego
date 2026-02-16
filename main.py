@@ -23,7 +23,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="main-header">🌱 Cotizador de Proyectos de Riego</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Vibe coded by Jhonatan Chilet</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Vibe coded by Jhonatan Chilet 2026</div>', unsafe_allow_html=True)
 st.markdown("---")
 
 def limpiar_texto(texto):
