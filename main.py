@@ -6,9 +6,8 @@ from datetime import datetime
 import tempfile
 import os
 import io
-import json
 import matplotlib
-matplotlib.use('Agg') 
+matplotlib.use('Agg') # Modo servidor para evitar errores de pantalla
 import matplotlib.pyplot as plt
 
 # --- CONFIGURACIÓN DE PÁGINA ---
@@ -29,18 +28,6 @@ st.markdown("---")
 def limpiar_texto(texto):
     if pd.isna(texto): return ""
     return str(texto).encode('latin-1', 'replace').decode('latin-1')
-
-# --- CARPETA DE GUARDADO LOCAL ---
-SAVE_DIR = "cotizaciones_guardadas"
-os.makedirs(SAVE_DIR, exist_ok=True)
-
-# --- INICIALIZAR VARIABLES DE SESIÓN (Para que al cargar se actualicen los textos) ---
-if 'cotizacion_num' not in st.session_state: st.session_state.cotizacion_num = "COT-2026-005"
-if 'cliente_nombre' not in st.session_state: st.session_state.cliente_nombre = "AGROINDUSTRIAL DEL NORTE S.A.C."
-if 'cliente_ruc' not in st.session_state: st.session_state.cliente_ruc = "20123456789"
-if 'cliente_lugar' not in st.session_state: st.session_state.cliente_lugar = "Fundo El Porvenir, km 165"
-if 'proyecto_nombre' not in st.session_state: st.session_state.proyecto_nombre = "PROYECTO DE RIEGO POR GOTEO PARA EL CULTIVO DE ARÁNDANO"
-if 'area_ha' not in st.session_state: st.session_state.area_ha = 10.0
 
 # --- CLASE PARA EL PDF ---
 class PresupuestoPDF(FPDF):
@@ -70,7 +57,7 @@ class PresupuestoPDF(FPDF):
         self.set_x(140)
         self.set_font('Arial', 'B', 13)
         self.set_text_color(0, 0, 0)
-        self.cell(60, 6, st.session_state.cotizacion_num, 0, 1, 'R')
+        self.cell(60, 6, f'{st.session_state.get("num_cot", "001")}', 0, 1, 'R')
         self.ln(12) 
 
     def footer(self):
@@ -109,6 +96,7 @@ class PresupuestoPDF(FPDF):
         
         for index, row in data.iterrows():
             desc = (row['Descripcion'][:60] + '..') if len(str(row['Descripcion'])) > 60 else str(row['Descripcion'])
+            
             if fill:
                 self.set_fill_color(248, 250, 248)
             else:
@@ -122,6 +110,7 @@ class PresupuestoPDF(FPDF):
             
             total_item = row['Cantidad'] * row['Precio']
             self.cell(30, 6, f"{total_item:,.2f}", 0, 1, 'R', fill)
+            
             total_capitulo += total_item
             fill = not fill 
             
@@ -131,68 +120,26 @@ class PresupuestoPDF(FPDF):
         return total_capitulo
 
 # --- BARRA LATERAL ---
-st.sidebar.header("📂 1. Cargar Datos Iniciales")
+st.sidebar.header("📂 1. Cargar Datos")
 db_file = st.sidebar.file_uploader("Base de Precios (Excel)", type=["xlsx"])
 project_file = st.sidebar.file_uploader("Metrados (Excel)", type=["xlsx"])
 
 st.sidebar.markdown("---")
 st.sidebar.header("📄 2. Datos del Cliente")
-st.sidebar.text_input("Cliente / Razón Social", key="cliente_nombre")
-st.sidebar.text_input("RUC", key="cliente_ruc")
-st.sidebar.text_input("Lugar de Entrega", key="cliente_lugar")
-st.sidebar.text_input("Nombre del Proyecto", key="proyecto_nombre")
-st.sidebar.number_input("Área del Proyecto (Hectáreas)", min_value=0.1, step=0.5, key="area_ha")
+cliente_nombre = st.sidebar.text_input("Cliente / Razón Social", "AGROINDUSTRIAL DEL NORTE S.A.C.")
+cliente_ruc = st.sidebar.text_input("RUC", "20123456789")
+cliente_lugar = st.sidebar.text_input("Lugar de Entrega", "Fundo El Porvenir, km 165")
+proyecto_nombre = st.sidebar.text_input("Nombre del Proyecto", "PROYECTO DE RIEGO POR GOTEO PARA EL CULTIVO DE ARÁNDANO")
+area_ha = st.sidebar.number_input("Área del Proyecto (Hectáreas)", min_value=0.1, value=10.0, step=0.5)
 
 st.sidebar.markdown("---")
 st.sidebar.header("👤 3. Datos del Vendedor")
-st.sidebar.text_input("N° Cotización", key="cotizacion_num")
+cotizacion_num = st.sidebar.text_input("N° Cotización", "COT-2026-005")
 vendedor_nombre = st.sidebar.text_input("Ejecutivo Comercial", "Ing. Jhonatan Chilet")
 vendedor_celular = st.sidebar.text_input("Número Celular", "+51 987 654 321")
 vendedor_correo = st.sidebar.text_input("Correo Electrónico", "jchilet@rivulis.com")
 
-st.sidebar.markdown("---")
-st.sidebar.header("💾 4. Historial (Sistema de Guardado)")
-c_save, c_load = st.sidebar.columns(2)
-with c_save:
-    if st.button("💾 Guardar Cotización"):
-        if 'df_master' in st.session_state:
-            datos_guardar = {
-                "meta": {
-                    "cliente_nombre": st.session_state.cliente_nombre,
-                    "cliente_ruc": st.session_state.cliente_ruc,
-                    "cliente_lugar": st.session_state.cliente_lugar,
-                    "proyecto_nombre": st.session_state.proyecto_nombre,
-                    "area_ha": st.session_state.area_ha,
-                    "cotizacion_num": st.session_state.cotizacion_num
-                },
-                "data": st.session_state.df_master.to_dict('records')
-            }
-            nombre_archivo = f"{SAVE_DIR}/{st.session_state.cotizacion_num}.json"
-            with open(nombre_archivo, "w") as f:
-                json.dump(datos_guardar, f)
-            st.success(f"¡{st.session_state.cotizacion_num} guardada con éxito!")
-        else:
-            st.error("Sube los archivos Excel primero.")
-
-archivos_guardados = [f for f in os.listdir(SAVE_DIR) if f.endswith('.json')]
-if archivos_guardados:
-    seleccion_archivo = st.sidebar.selectbox("📂 Cargar anterior:", ["-- Seleccionar --"] + archivos_guardados)
-    if seleccion_archivo != "-- Seleccionar --":
-        if st.sidebar.button("📥 Cargar a la tabla"):
-            with open(f"{SAVE_DIR}/{seleccion_archivo}", "r") as f:
-                datos_cargados = json.load(f)
-                
-                # Restaurar Metadata
-                st.session_state.cliente_nombre = datos_cargados["meta"]["cliente_nombre"]
-                st.session_state.cliente_ruc = datos_cargados["meta"]["cliente_ruc"]
-                st.session_state.cliente_lugar = datos_cargados["meta"]["cliente_lugar"]
-                st.session_state.proyecto_nombre = datos_cargados["meta"]["proyecto_nombre"]
-                st.session_state.area_ha = datos_cargados["meta"]["area_ha"]
-                st.session_state.cotizacion_num = datos_cargados["meta"]["cotizacion_num"]
-                
-                # Restaurar Tabla
-                st.session_state.df_master = pd.DataFrame(datos_cargados["data"])
-                st.rerun()
+st.session_state['num_cot'] = cotizacion_num
 
 def estandarizar_codigo(valor):
     valor_str = str(valor).strip().upper()
@@ -200,10 +147,10 @@ def estandarizar_codigo(valor):
     if valor_str.endswith('.0'): return valor_str[:-2]
     return valor_str
 
-if project_file and db_file or 'df_master' in st.session_state:
+if project_file and db_file:
     try:
-        # --- CARGA INICIAL (Solo si no hay datos guardados/cargados en memoria) ---
-        if 'df_master' not in st.session_state and project_file and db_file:
+        # --- CARGA INICIAL ---
+        if 'df_master' not in st.session_state:
             df_precios = pd.read_excel(db_file)
             df_proyecto = pd.read_excel(project_file)
             
@@ -247,7 +194,7 @@ if project_file and db_file or 'df_master' in st.session_state:
         elif orden == "Partida (Agrupado)": df_view = df_view.sort_values(by=['Partida', 'Descripcion'])
         else: df_view = df_view.sort_values(by='Item', ascending=True)
 
-        st.info("💡 **Fluidez total:** Modifica todo lo que quieras. Al terminar, presiona el botón verde.")
+        st.info("💡 **Cómo usar:** Haz clic en 'Add row'. Escribe tranquilamente todos tus datos. Al terminar, presiona el botón verde de abajo.")
 
         # --- TABLA EDITABLE ---
         edited_df = st.data_editor(
@@ -269,7 +216,7 @@ if project_file and db_file or 'df_master' in st.session_state:
             height=450
         )
 
-        # --- BOTÓN DE RECALCULAR ---
+        # --- BOTÓN DE RECALCULAR Y ACTUALIZAR ---
         st.markdown("<br>", unsafe_allow_html=True)
         col_espacio, col_boton, col_espacio2 = st.columns([1, 2, 1])
         with col_boton:
@@ -304,13 +251,14 @@ if project_file and db_file or 'df_master' in st.session_state:
         total_neto = st.session_state.df_master['Total'].sum()
         igv = total_neto * 0.18
         total_venta = total_neto + igv
-        precio_ha = total_venta / st.session_state.area_ha if st.session_state.area_ha > 0 else 0
+        precio_ha = total_venta / area_ha if area_ha > 0 else 0
 
         st.markdown("---")
         st.subheader("📊 Resumen Ejecutivo y Exportación")
 
         c_izq, c_der = st.columns([1, 1.2])
 
+        # Creamos la figura Donut para la web (usando Plotly)
         resumen_grafico = st.session_state.df_master.groupby('Partida')[['Total']].sum().reset_index()
         fig_donut_web = None
         if resumen_grafico['Total'].sum() > 0:
@@ -337,15 +285,15 @@ if project_file and db_file or 'df_master' in st.session_state:
             def generar_excel():
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    # Exportamos la data maestra y la del resumen
                     st.session_state.df_master.to_excel(writer, index=False, sheet_name='Detalle Cotización')
-                    resumen.to_excel(writer, index=False, sheet_name='Resumen Sistemas')
+                    resumen_grafico.to_excel(writer, index=False, sheet_name='Resumen Sistemas')
                 return output.getvalue()
 
             def generar_pdf_bytes():
                 pdf = PresupuestoPDF()
                 pdf.add_page()
                 
+                # --- TARJETA DE ENCABEZADO ---
                 y_rect = pdf.get_y()
                 pdf.set_fill_color(245, 248, 245) 
                 pdf.rect(10, y_rect, 190, 26, 'F')
@@ -364,23 +312,29 @@ if project_file and db_file or 'df_master' in st.session_state:
                 
                 pdf.set_x(15)
                 pdf.set_font('Arial', 'B', 9)
-                pdf.cell(95, 5, limpiar_texto(st.session_state.cliente_nombre), 0, 0) 
+                pdf.cell(95, 5, limpiar_texto(cliente_nombre), 0, 0) 
                 pdf.set_x(110)
                 pdf.cell(90, 5, limpiar_texto(vendedor_nombre), 0, 1)
                 
                 pdf.set_x(15)
                 pdf.set_font('Arial', '', 9)
-                pdf.cell(95, 5, limpiar_texto(f"RUC: {st.session_state.cliente_ruc}"), 0, 0)
+                pdf.cell(95, 5, limpiar_texto(f"RUC: {cliente_ruc}"), 0, 0)
                 pdf.set_x(110)
                 pdf.cell(90, 5, limpiar_texto(f"Celular: {vendedor_celular}"), 0, 1)
                 
                 pdf.set_x(15)
-                pdf.cell(95, 5, limpiar_texto(f"Lugar: {st.session_state.cliente_lugar}"), 0, 0)
+                pdf.cell(95, 5, limpiar_texto(f"Lugar: {cliente_lugar}"), 0, 0)
                 pdf.set_x(110)
                 pdf.cell(90, 5, limpiar_texto(f"Correo: {vendedor_correo}"), 0, 1)
                 
                 pdf.ln(6) 
                 
+                # --- CALCULAR RESUMEN PARA EL PDF ---
+                # AQUI ESTABA EL ERROR: Definimos 'resumen' ANTES de usarlo en cualquier función
+                resumen = st.session_state.df_master.groupby('Partida')[['Total']].sum().reset_index()
+                resumen.insert(0, 'N°', range(1, len(resumen) + 1)) 
+                
+                # Función auxiliar para dibujar tabla + totales (para no repetir código)
                 def dibujar_resumen_y_totales(pdf_obj):
                     pdf_obj.set_font('Arial', 'B', 9)
                     pdf_obj.set_fill_color(235, 235, 235)
@@ -420,17 +374,17 @@ if project_file and db_file or 'df_master' in st.session_state:
                     
                     pdf_obj.set_font('Arial', 'B', 11)
                     pdf_obj.set_text_color(211, 47, 47) 
-                    pdf_obj.cell(140, 7, f'COSTO POR HECTAREA ({st.session_state.area_ha} Ha):', 0, 0, 'R')
+                    pdf_obj.cell(140, 7, f'COSTO POR HECTAREA ({area_ha} Ha):', 0, 0, 'R')
                     pdf_obj.cell(50, 7, f"$ {precio_ha:,.2f}", 0, 1, 'R')
                     
                     pdf_obj.set_text_color(0, 0, 0)
                     pdf_obj.ln(8)
 
-                # --- HOJA 1 ---
-                pdf.section_title(f"Resumen: {st.session_state.proyecto_nombre}")
+                # --- HOJA 1: RESUMEN ---
+                pdf.section_title(f"Resumen: {proyecto_nombre}")
                 dibujar_resumen_y_totales(pdf)
 
-                # --- HOJAS DE DETALLES ---
+                # --- DETALLES DE CADA SISTEMA ---
                 sistemas_unicos = st.session_state.df_master['Partida'].unique()
                 for sist in sistemas_unicos:
                     df_sist = st.session_state.df_master[st.session_state.df_master['Partida'] == sist].copy()
@@ -447,12 +401,12 @@ if project_file and db_file or 'df_master' in st.session_state:
                         pdf.set_text_color(0, 0, 0)
                         pdf.ln(3)
 
-                # --- ÚLTIMA HOJA CON GRÁFICO ---
+                # --- ÚLTIMA HOJA: RESUMEN + DONUT ---
                 pdf.add_page() 
                 pdf.section_title("Resumen Financiero y Distribucion")
                 dibujar_resumen_y_totales(pdf)
                 
-                # --- MATPLOTLIB (CORRECCIÓN DE ETIQUETAS CENTRADAS) ---
+                # --- SOLUCIÓN MATPLOTLIB (DONUT BLANCO) ---
                 if not resumen_grafico.empty and resumen_grafico['Total'].sum() > 0:
                     try:
                         fig_mat, ax = plt.subplots(figsize=(10, 5))
@@ -462,14 +416,13 @@ if project_file and db_file or 'df_master' in st.session_state:
                             resumen_grafico['Total'], 
                             labels=[limpiar_texto(x) for x in resumen_grafico['Partida']],
                             autopct='%1.1f%%', 
-                            pctdistance=0.75, # <--- ESTO CENTRA LOS PORCENTAJES EN EL ANILLO
+                            pctdistance=0.75,
                             startangle=140,
                             colors=colores,
                             wedgeprops=dict(width=0.45, edgecolor='white', linewidth=2),
                             textprops=dict(color="black", fontsize=10, weight="bold")
                         )
                         
-                        # Garantizamos el centrado absoluto de cada etiqueta de porcentaje
                         for autotext in autotexts:
                             autotext.set_horizontalalignment('center')
                             autotext.set_verticalalignment('center')
@@ -500,7 +453,7 @@ if project_file and db_file or 'df_master' in st.session_state:
                 st.download_button(
                     label="📄 Descargar Presupuesto (PDF)",
                     data=generar_pdf_bytes(),
-                    file_name=f"Presupuesto_{st.session_state.cotizacion_num}.pdf",
+                    file_name=f"Presupuesto_{cotizacion_num}.pdf",
                     mime="application/pdf",
                     type="primary",
                     use_container_width=True
@@ -510,7 +463,7 @@ if project_file and db_file or 'df_master' in st.session_state:
                 st.download_button(
                     label="📊 Descargar en Excel",
                     data=generar_excel(),
-                    file_name=f"Presupuesto_{st.session_state.cotizacion_num}.xlsx",
+                    file_name=f"Presupuesto_{cotizacion_num}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
@@ -526,4 +479,8 @@ if project_file and db_file or 'df_master' in st.session_state:
         st.error(f"⚠️ Error de datos: Revisa que los archivos sean correctos. Detalle: {e}")
         st.write("Presiona F5 para limpiar la memoria si persiste el error.")
 else:
-    st.info("👋 Sube tus archivos Excel en el panel lateral o carga una cotización guardada.")
+    st.info("👋 Sube tus archivos Excel en el panel lateral para comenzar.")
+```
+
+Sincroniza y recarga.
+Ahora sí, verás que el PDF tiene el resumen completo en la primera y última hoja, y la Donut hecha con Matplotlib (fondo blanco) centrada y hermosa al final. ¡Quedo atento a tu confirmación de victoria! 🚀
